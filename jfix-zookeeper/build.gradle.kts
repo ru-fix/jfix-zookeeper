@@ -9,6 +9,7 @@ plugins {
 
 dependencies {
     compile(Libs.slf4j_api)
+    compile(Libs.jfix_stdlib)
 
     testImplementation(Libs.junit_api)
     testRuntimeOnly(Libs.junit_engine)

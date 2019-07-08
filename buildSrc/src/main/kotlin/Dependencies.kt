@@ -3,7 +3,7 @@ object Vers {
     val kotlin = "1.3.41"
     val sl4j = "1.7.25"
     val dokka = "0.9.18"
-    val gradle_release_plugin = "1.3.9"
+    val gradle_release_plugin = "1.3.8"
     val junit = "5.2.0"
     val hamkrest = "1.4.2.2"
 }
@@ -14,6 +14,7 @@ object Libs {
     val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
 
     val gradle_release_plugin = "ru.fix:gradle-release-plugin:${Vers.gradle_release_plugin}"
+    val jfix_stdlib = "ru.fix:jfix-stdlib-concurrency:1.0.22"
     val dokka_gradle_plugin = "org.jetbrains.dokka:dokka-gradle-plugin:${Vers.dokka}"
 
     val slf4j_api = "org.slf4j:slf4j-api:${Vers.sl4j}"

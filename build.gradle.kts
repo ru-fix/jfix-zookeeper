@@ -10,7 +10,6 @@ buildscript {
     repositories {
         jcenter()
         mavenCentral()
-        mavenLocal()
     }
     dependencies {
         classpath(Libs.gradle_release_plugin)

@@ -1,6 +1,4 @@
-
 import org.gradle.kotlin.dsl.*
-
 
 plugins {
     java
@@ -8,10 +6,23 @@ plugins {
 }
 
 dependencies {
-    compile(Libs.slf4j_api)
-    compile(Libs.jfix_stdlib)
+    annotationProcessor(Libs.lombok)
 
-    testImplementation(Libs.junit_api)
-    testRuntimeOnly(Libs.junit_engine)
-    testRuntimeOnly(Libs.slf4j_simple)
+    compile(Libs.jfix_stdlib_socket)
+    compile(Libs.jackson_annotations)
+    compile(Libs.jackson_datatype_jsr310)
+    compile(Libs.jackson_kotlin_module)
+    compile(Libs.apache_curator)
+    compile(Libs.apache_curator_test)
+
+    compileOnly(Libs.lombok)
+    compileOnly(Libs.junit4)
+
+    testImplementation(Libs.logback)
+    testImplementation(Libs.commons_io)
+    testImplementation(Libs.junit4)
+}
+
+tasks.test {
+    useJUnit()
 }

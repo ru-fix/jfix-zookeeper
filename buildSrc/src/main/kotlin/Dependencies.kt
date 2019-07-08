@@ -1,11 +1,16 @@
 
 object Vers {
     val kotlin = "1.3.41"
-    val sl4j = "1.7.25"
     val dokka = "0.9.18"
     val gradle_release_plugin = "1.3.8"
-    val junit = "5.2.0"
-    val hamkrest = "1.4.2.2"
+    val jfix_stdlib = "1.0.22"
+    val lombok = "1.18.4"
+    val jackson = "2.9.6"
+    val jackson_kotlin = "2.9.6"
+    val apache_curator = "2.10.0"
+    val logback = "1.1.11"
+    val commons_io = "2.4"
+    val junit4 = "4.12"
 }
 
 object Libs {
@@ -14,19 +19,16 @@ object Libs {
     val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
 
     val gradle_release_plugin = "ru.fix:gradle-release-plugin:${Vers.gradle_release_plugin}"
-    val jfix_stdlib = "ru.fix:jfix-stdlib-concurrency:1.0.22"
     val dokka_gradle_plugin = "org.jetbrains.dokka:dokka-gradle-plugin:${Vers.dokka}"
 
-    val slf4j_api = "org.slf4j:slf4j-api:${Vers.sl4j}"
-    val slf4j_simple = "org.slf4j:slf4j-simple:${Vers.sl4j}"
-
-    val mockito = "org.mockito:mockito-all:1.10.19"
-    val mockito_kotiln = "com.nhaarman:mockito-kotlin-kt1.1:1.5.0"
-    val kotlin_logging = "io.github.microutils:kotlin-logging:1.4.9"
-
-    val junit_api = "org.junit.jupiter:junit-jupiter-api:${Vers.junit}"
-    val junit_parametri = "org.junit.jupiter:junit-jupiter-params:${Vers.junit}"
-    val junit_engine = "org.junit.jupiter:junit-jupiter-engine:${Vers.junit}"
-    val hamkrest = "com.natpryce:hamkrest:${Vers.hamkrest}"
-    val hamcrest = "org.hamcrest:hamcrest-all:1.3"
+    val jfix_stdlib_socket = "ru.fix:jfix-stdlib-socket:${Vers.jfix_stdlib}"
+    val lombok = "org.projectlombok:lombok:${Vers.lombok}"
+    val jackson_annotations = "com.fasterxml.jackson.core:jackson-annotations:${Vers.jackson}"
+    val jackson_datatype_jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${Vers.jackson}"
+    val jackson_kotlin_module = "com.fasterxml.jackson.module:jackson-module-kotlin:${Vers.jackson_kotlin}"
+    val apache_curator = "org.apache.curator:curator-recipes:${Vers.apache_curator}"
+    val apache_curator_test = "org.apache.curator:curator-test:${Vers.apache_curator}"
+    val junit4 = "junit:junit:${Vers.junit4}"
+    val logback = "ch.qos.logback:logback-classic:${Vers.logback}"
+    val commons_io = "commons-io:commons-io:${Vers.commons_io}"
 }

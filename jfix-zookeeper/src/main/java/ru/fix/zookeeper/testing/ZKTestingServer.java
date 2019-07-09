@@ -1,4 +1,4 @@
-package ru.fix.zookeeper.zkconfig;
+package ru.fix.zookeeper.testing;
 
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;

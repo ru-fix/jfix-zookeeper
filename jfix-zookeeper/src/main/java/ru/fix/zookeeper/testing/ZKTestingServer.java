@@ -5,17 +5,46 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.test.InstanceSpec;
 import org.apache.curator.test.TestingServer;
-import org.junit.rules.ExternalResource;
 import org.slf4j.Logger;
 import ru.fix.stdlib.socket.SocketChecker;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 
 import static org.slf4j.LoggerFactory.getLogger;
 
-public class ZKTestingServer extends ExternalResource {
+/**
+ * -Run test zk server
+ * -Create client CuratorFramework
+ *
+ * Example of using:
+ *
+ * -Common way:
+ *
+ * ZkTestingServer server = new ZkTestingServer();
+ * server.start();
+ *
+ * -In Junit5:
+ *
+ * private ZkTestingServer server;
+ *
+ * `@BeforeEach`
+ * public void setUp() {
+ *     server = new ZkTestingServer();
+ *     server.start();
+ * }
+ *  or
+ *
+ * private ZkTestingServer server = new ZkTestingServer();
+ * `@BeforeAll`
+ * public void setUp() {
+ *      server.start();
+ * }
+ * `
+ */
+public class ZKTestingServer {
 
     private static final Logger log = getLogger(ZKTestingServer.class);
 
@@ -26,7 +55,7 @@ public class ZKTestingServer extends ExternalResource {
     private CuratorFramework curatorFramework;
     private String uuid;
 
-    private void init() throws Exception {
+    private void init() throws IOException {
         tmpDir = Files.createTempDirectory("tmpDir");
 
         for (int i = 0; i < 15; i++) {
@@ -59,8 +88,8 @@ public class ZKTestingServer extends ExternalResource {
         }));
     }
 
-    @Override
-    protected void before() throws Throwable {
+
+    public void start() throws Exception {
         init();
         uuid = UUID.randomUUID().toString();
 

@@ -1,7 +1,7 @@
 package ru.fix.zookeeper.transactional;
 
 import org.apache.zookeeper.KeeperException;
-import org.junit.Rule;
+import org.junit.Before;
 import org.junit.Test;
 import ru.fix.zookeeper.testing.ZKTestingServer;
 
@@ -9,8 +9,14 @@ import static org.junit.Assert.*;
 
 public class TransactionalClientIT {
 
-    @Rule
-    public ZKTestingServer zkTestingServer = new ZKTestingServer();
+    private ZKTestingServer zkTestingServer;
+
+    @Before
+    public void setUp() throws Exception {
+        zkTestingServer = new ZKTestingServer();
+        zkTestingServer.start();
+    }
+
 
     @Test
     public void testDeletePathWithChildrenIfNeeded() throws Exception {

@@ -16,7 +16,6 @@ dependencies {
     compile(Libs.apache_curator_test)
 
     compileOnly(Libs.lombok)
-    compileOnly(Libs.junit4)
 
     testImplementation(Libs.logback)
     testImplementation(Libs.commons_io)

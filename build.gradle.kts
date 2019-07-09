@@ -64,6 +64,10 @@ subprojects {
     repositories {
         jcenter()
         mavenCentral()
+
+        if(!repositoryUrl.isNullOrEmpty()){
+            maven(url=repositoryUrl.toString())
+        }
     }
 
     val sourcesJar by tasks.creating(Jar::class) {

@@ -3,7 +3,7 @@ package ru.fix.zookeeper.transactional;
 import org.apache.zookeeper.KeeperException;
 import org.junit.Rule;
 import org.junit.Test;
-import ru.fix.zookeeper.zkconfig.ZKTestingServer;
+import ru.fix.zookeeper.testing.ZKTestingServer;
 
 import static org.junit.Assert.*;
 

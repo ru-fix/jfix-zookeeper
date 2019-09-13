@@ -61,7 +61,7 @@ public class ZKTestingServer implements AutoCloseable {
      * Register shutdown hook {@link Runtime#addShutdownHook(Thread)} and close on jvm exit.
      * @param closeOnJvmShutdown
      */
-    private ZKTestingServer withCloseOnJvmShutdown(boolean closeOnJvmShutdown){
+    public ZKTestingServer withCloseOnJvmShutdown(boolean closeOnJvmShutdown){
         this.closeOnJvmShutdown = closeOnJvmShutdown;
         return this;
     }

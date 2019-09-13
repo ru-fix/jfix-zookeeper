@@ -13,7 +13,8 @@ public class TransactionalClientIT {
 
     @Before
     public void setUp() throws Exception {
-        zkTestingServer = new ZKTestingServer();
+        zkTestingServer = new ZKTestingServer()
+                .withCloseOnJvmShutdown(true);
         zkTestingServer.start();
     }
 

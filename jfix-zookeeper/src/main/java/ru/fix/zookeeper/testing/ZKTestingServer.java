@@ -16,33 +16,29 @@ import java.util.UUID;
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
- * -Run test zk server
- * -Create client CuratorFramework
- *
- * Example of using:
- *
- * -Common way:
- *
- * ZkTestingServer server = new ZkTestingServer();
- * server.start();
- *
- * -In Junit5:
- *
- * private ZkTestingServer server;
- *
- * `@BeforeEach`
- * public void setUp() {
- *     server = new ZkTestingServer();
- *     server.start();
+ * Runs single instance zookeeper server. <br>
+ * Stores node state in temp folder that will be removed during {@link #close()} <br>
+ * Creates CuratorFramework client that can be used in tests. <br>
+ * <br>
+ * This way server will be shutdown on by JVM shutdown hook <br>
+ * <pre>{@code
+ *   ZkTestingServer server = new ZkTestingServer()
+ *              .withCloseOnJvmShutdown()
+ *              .start();
  * }
- *  or
+ * </pre>
+ * <br>
+ * This way server shutdown is explicit<br>
+ * <pre>{@code
+ *   ZkTestingServer server = new ZkTestingServer()
+ *              .start();
  *
- * private ZkTestingServer server = new ZkTestingServer();
- * `@BeforeAll`
- * public void setUp() {
- *      server.start();
+ *   // -- run tests --
+ *
+ *   server.close();
+ *
  * }
- * `
+ * </pre>
  */
 public class ZKTestingServer implements AutoCloseable {
 
@@ -108,7 +104,7 @@ public class ZKTestingServer implements AutoCloseable {
 
 
 
-    public void start() throws Exception {
+    public ZKTestingServer start() throws Exception {
         init();
         uuid = UUID.randomUUID().toString();
 
@@ -117,6 +113,8 @@ public class ZKTestingServer implements AutoCloseable {
         client.close();
 
         curatorFramework = createClient();
+
+        return this;
     }
 
     public int getPort() {

@@ -44,7 +44,7 @@ import static org.slf4j.LoggerFactory.getLogger;
  * }
  * `
  */
-public class ZKTestingServer {
+public class ZKTestingServer implements AutoCloseable {
 
     private static final Logger log = getLogger(ZKTestingServer.class);
 
@@ -55,12 +55,16 @@ public class ZKTestingServer {
     private CuratorFramework curatorFramework;
     private String uuid;
 
-    private boolean closeOnJvmShutdown = true;
+    private boolean closeOnJvmShutdown = false;
+
+    /**
+     * Register shutdown hook {@link Runtime#addShutdownHook(Thread)} and close on jvm exit.
+     * @param closeOnJvmShutdown
+     */
     private ZKTestingServer withCloseOnJvmShutdown(boolean closeOnJvmShutdown){
         this.closeOnJvmShutdown = closeOnJvmShutdown;
         return this;
     }
-
 
     private void init() throws IOException {
         tmpDir = Files.createTempDirectory("tmpDir");
@@ -79,21 +83,29 @@ public class ZKTestingServer {
             }
         }
 
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                zkServer.close();
-            } catch (Exception e) {
-                log.error("Failed to close zk testing server", e);
-            }
-
-            try {
-                Files.deleteIfExists(tmpDir);
-            } catch (Exception e) {
-                log.error("Failed to delete {}", tmpDir, e);
-            }
-        }));
+        if(closeOnJvmShutdown) {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> close()));
+        }
     }
+
+    /**
+     * Close server and remove temp directory
+     */
+    @Override
+    public void close(){
+        try {
+            zkServer.close();
+        } catch (Exception e) {
+            log.error("Failed to close zk testing server", e);
+        }
+
+        try {
+            Files.deleteIfExists(tmpDir);
+        } catch (Exception e) {
+            log.error("Failed to delete {}", tmpDir, e);
+        }
+    }
+
 
 
     public void start() throws Exception {

@@ -55,6 +55,13 @@ public class ZKTestingServer {
     private CuratorFramework curatorFramework;
     private String uuid;
 
+    private boolean closeOnJvmShutdown = true;
+    private ZKTestingServer withCloseOnJvmShutdown(boolean closeOnJvmShutdown){
+        this.closeOnJvmShutdown = closeOnJvmShutdown;
+        return this;
+    }
+
+
     private void init() throws IOException {
         tmpDir = Files.createTempDirectory("tmpDir");
 

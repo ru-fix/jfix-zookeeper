@@ -8,7 +8,7 @@ object Vers {
     //Dependencies
     val kotlin = "1.3.41"
     val dokka = "0.9.18"
-    val jfix_stdlib = "1.0.22"
+    val jfix_stdlib = "1.0.59"
     val lombok = "1.18.4"
     val jackson = "2.9.6"
     val jackson_kotlin = "2.9.6"

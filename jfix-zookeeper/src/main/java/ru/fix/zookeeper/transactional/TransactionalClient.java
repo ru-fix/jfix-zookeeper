@@ -79,6 +79,9 @@ public class TransactionalClient {
     }
 
     /**
+     * Usage: invoke this method with the same parameter during different transactions,
+     * which must not succeed in parallel.
+     *
      * @param path node, which version should be checked and updated
      * @return previous version of updating node
      */

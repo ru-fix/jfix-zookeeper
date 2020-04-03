@@ -1,9 +1,19 @@
 package ru.fix.zookeeper.transactional;
 
+import org.apache.curator.framework.CuratorFramework;
 import org.apache.zookeeper.KeeperException;
 import org.junit.Before;
 import org.junit.Test;
 import ru.fix.zookeeper.testing.ZKTestingServer;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.junit.Assert.*;
 
@@ -94,5 +104,41 @@ public class TransactionalClientIT {
                 .commit();
     }
 
+
+    @Test
+    public void check_version_WHEN_multiply_updating_THEN_only_one_succeed() throws Exception {
+        String lockPath = "/lock";
+        CuratorFramework curator = zkTestingServer.getClient();
+        curator.create().creatingParentsIfNeeded().forPath(lockPath);
+
+        Set<String> expectedNodes = new HashSet<>();
+        expectedNodes.add("lock");
+
+        int quantityOfTransactions = 10;
+        CountDownLatch countDownLatch = new CountDownLatch(quantityOfTransactions);
+        List<CompletableFuture<Void>> futures = new ArrayList<>(quantityOfTransactions);
+        ExecutorService executor = Executors.newFixedThreadPool(quantityOfTransactions);
+
+        for (int i = 0; i < quantityOfTransactions; i++) {
+            final int numberOfTransaction = i;
+            futures.add(CompletableFuture.runAsync(() -> {
+                try {
+                    TransactionalClient.tryCommit(zkTestingServer.getClient(), 1, transaction -> {
+                        transaction.checkAndUpdateVersion(lockPath);
+                        transaction.createPath("/" + numberOfTransaction);
+                        countDownLatch.countDown();
+                        countDownLatch.await();
+                    });
+                    expectedNodes.add(String.valueOf(numberOfTransaction));
+                } catch (Exception ignored) {
+                }
+            }, executor));
+        }
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+        executor.shutdown();
+
+        assertEquals("expected 'lock' and one created node: " + expectedNodes, expectedNodes.size(), 2);
+        assertEquals(expectedNodes, new HashSet<>(curator.getChildren().forPath("/")));
+    }
 
 }

@@ -78,6 +78,18 @@ public class TransactionalClient {
         return this;
     }
 
+    /**
+     * @param path node, which version should be checked and updated
+     * @return previous version of updating node
+     */
+    public int checkAndUpdateVersion(String path) throws Exception {
+        int version = curatorFramework.checkExists().forPath(path).getVersion();
+        checkPathWithVersion(path, version);
+        setData(path, new byte[]{});
+        return version;
+    }
+
+
     public static void tryCommit(CuratorFramework curatorFramework, int times, TransactionCreator transactionCreator)
             throws Exception {
         for (int i = 0; i < times; i++) {

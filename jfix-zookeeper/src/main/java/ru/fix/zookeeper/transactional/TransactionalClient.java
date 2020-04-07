@@ -79,6 +79,7 @@ public class TransactionalClient {
     }
 
     /**
+     * Node by given path should exist, value of given node will be overwritten.
      * Usage: invoke this method with the same parameter during different transactions,
      * which must not succeed in parallel.
      *

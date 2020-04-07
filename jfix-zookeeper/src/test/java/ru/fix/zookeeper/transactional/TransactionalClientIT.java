@@ -10,10 +10,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 import static org.junit.Assert.*;
 
@@ -111,7 +108,7 @@ public class TransactionalClientIT {
         CuratorFramework curator = zkTestingServer.getClient();
         curator.create().creatingParentsIfNeeded().forPath(lockPath);
 
-        Set<String> expectedNodes = new HashSet<>();
+        Set<String> expectedNodes = new CopyOnWriteArraySet<>();
         expectedNodes.add("lock");
 
         int quantityOfTransactions = 10;
@@ -120,16 +117,16 @@ public class TransactionalClientIT {
         ExecutorService executor = Executors.newFixedThreadPool(quantityOfTransactions);
 
         for (int i = 0; i < quantityOfTransactions; i++) {
-            final int numberOfTransaction = i;
+            final int transactionNumber = i;
             futures.add(CompletableFuture.runAsync(() -> {
                 try {
                     TransactionalClient.tryCommit(zkTestingServer.getClient(), 1, transaction -> {
                         transaction.checkAndUpdateVersion(lockPath);
-                        transaction.createPath("/" + numberOfTransaction);
+                        transaction.createPath("/" + transactionNumber);
                         countDownLatch.countDown();
                         countDownLatch.await();
                     });
-                    expectedNodes.add(String.valueOf(numberOfTransaction));
+                    expectedNodes.add(String.valueOf(transactionNumber));
                 } catch (Exception ignored) {
                 }
             }, executor));

@@ -1,6 +1,7 @@
 package ru.fix.zookeeper.transactional;
 
 import org.apache.curator.framework.CuratorFramework;
+import org.apache.zookeeper.KeeperException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import ru.fix.zookeeper.testing.ZKTestingServer;
@@ -58,9 +59,12 @@ public class TransactionalClientIT {
     @Test
     public void testCreatePathWithParentsIfNeeded_ForExistingNode() throws Exception {
         zkTestingServer.getClient().create().creatingParentsIfNeeded().forPath("/2/03");
-        TransactionalClient.createTransaction(zkTestingServer.getClient())
-                .createPathWithParentsIfNeeded("/2/03")
-                .commit();
+        assertThrows(
+                KeeperException.NodeExistsException.class,
+                () -> TransactionalClient.createTransaction(zkTestingServer.getClient())
+                        .createPathWithParentsIfNeeded("/2/03")
+                        .commit()
+        );
     }
 
     @Test
@@ -79,13 +83,16 @@ public class TransactionalClientIT {
 
     @Test
     public void testCheckPathWithIncorrectVersion() throws Exception {
-        TransactionalClient.createTransaction(zkTestingServer.getClient())
-                .createPathWithParentsIfNeeded("/1/01/001")
-                .checkPath("/1/01/001")
-                .checkPathWithVersion("/1/01/001", 0)
-                .setData("/1/01/001", new byte[]{101})
-                .checkPathWithVersion("/1/01/001", 2)
-                .commit();
+        assertThrows(
+                KeeperException.BadVersionException.class,
+                () -> TransactionalClient.createTransaction(zkTestingServer.getClient())
+                        .createPathWithParentsIfNeeded("/1/01/001")
+                        .checkPath("/1/01/001")
+                        .checkPathWithVersion("/1/01/001", 0)
+                        .setData("/1/01/001", new byte[]{101})
+                        .checkPathWithVersion("/1/01/001", 2)
+                        .commit()
+        );
     }
 
     /**
@@ -93,12 +100,17 @@ public class TransactionalClientIT {
      */
     @Test
     public void testMixedCreateDelete_Failure() throws Exception {
-        zkTestingServer.getClient().create().creatingParentsIfNeeded().forPath("/1/2/3/4/5");
+        zkTestingServer.getClient().create()
+                .creatingParentsIfNeeded()
+                .forPath("/1/2/3/4/5");
 
-        TransactionalClient.createTransaction(zkTestingServer.getClient())
-                .deletePathWithChildrenIfNeeded("/1/2/3")
-                .createPathWithParentsIfNeeded("/1/2/3/4")
-                .commit();
+        assertThrows(
+                KeeperException.NoNodeException.class,
+                () -> TransactionalClient.createTransaction(zkTestingServer.getClient())
+                        .deletePathWithChildrenIfNeeded("/1/2/3")
+                        .createPathWithParentsIfNeeded("/1/2/3/4")
+                        .commit()
+        );
     }
 
 

@@ -1,14 +1,16 @@
 package ru.fix.zookeeper.lock;
 
 import org.apache.commons.io.IOUtils;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class MarshallerTest {
 
@@ -23,7 +25,7 @@ public class MarshallerTest {
     @Test
     public void marshallLockData() throws IOException {
         String json = Marshaller.marshall(lockData);
-        Assert.assertEquals(json, getJsonFromResource("lockData.json"));
+        assertEquals(json, getJsonFromResource("lockData.json"));
         log.trace("Marshalling successfull.\n{}", json);
     }
 
@@ -31,14 +33,14 @@ public class MarshallerTest {
     public void unmarshallLockData() throws IOException {
         String json = getJsonFromResource("lockData.json");
         LockData lockData = Marshaller.unmarshall(json, LockData.class);
-        Assert.assertNotNull(lockData);
-        Assert.assertEquals(lockData, this.lockData);
+        assertNotNull(lockData);
+        assertEquals(lockData, this.lockData);
         log.trace("Unmarshalling successfull.\n{}", lockData);
     }
 
     private String getJsonFromResource(String name) throws IOException {
         URL url = getClass().getClassLoader().getResource(name);
-        Assert.assertNotNull(url);
+        assertNotNull(url);
         String json = IOUtils.toString(url, StandardCharsets.UTF_8);
         return json.replaceAll("\\s", "");
     }

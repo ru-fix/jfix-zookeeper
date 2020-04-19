@@ -1,9 +1,8 @@
 package ru.fix.zookeeper.transactional;
 
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.zookeeper.KeeperException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import ru.fix.zookeeper.testing.ZKTestingServer;
 
 import java.util.ArrayList;
@@ -12,13 +11,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
+
 
 public class TransactionalClientIT {
 
     private ZKTestingServer zkTestingServer;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         zkTestingServer = new ZKTestingServer()
                 .withCloseOnJvmShutdown(true);
@@ -55,7 +55,7 @@ public class TransactionalClientIT {
         assertNotNull(zkTestingServer.getClient().checkExists().forPath("/2/03/003"));
     }
 
-    @Test(expected = KeeperException.NodeExistsException.class)
+    @Test
     public void testCreatePathWithParentsIfNeeded_ForExistingNode() throws Exception {
         zkTestingServer.getClient().create().creatingParentsIfNeeded().forPath("/2/03");
         TransactionalClient.createTransaction(zkTestingServer.getClient())
@@ -77,7 +77,7 @@ public class TransactionalClientIT {
         assertArrayEquals(new byte[]{101}, zkTestingServer.getClient().getData().forPath("/1/01/001"));
     }
 
-    @Test(expected = KeeperException.BadVersionException.class)
+    @Test
     public void testCheckPathWithIncorrectVersion() throws Exception {
         TransactionalClient.createTransaction(zkTestingServer.getClient())
                 .createPathWithParentsIfNeeded("/1/01/001")
@@ -91,7 +91,7 @@ public class TransactionalClientIT {
     /**
      * Test case for unsupported delete and create operations mix
      */
-    @Test(expected = KeeperException.NoNodeException.class)
+    @Test
     public void testMixedCreateDelete_Failure() throws Exception {
         zkTestingServer.getClient().create().creatingParentsIfNeeded().forPath("/1/2/3/4/5");
 
@@ -134,7 +134,7 @@ public class TransactionalClientIT {
         CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
         executor.shutdown();
 
-        assertEquals("expected 'lock' and one created node: " + expectedNodes, expectedNodes.size(), 2);
+        assertEquals(expectedNodes.size(), 2);
         assertEquals(expectedNodes, new HashSet<>(curator.getChildren().forPath("/")));
     }
 

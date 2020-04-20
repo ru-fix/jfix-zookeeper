@@ -10,7 +10,6 @@ object Vers {
 
     //Dependencies
     const val kotlin = "1.3.70"
-    const val jfix_stdlib = "3.0.0"
     const val lombok = "1.18.12"
     const val jackson = "2.10.3"
     const val jackson_kotlin = "2.10.3"
@@ -18,6 +17,10 @@ object Vers {
     const val logback = "1.2.3"
     const val commons_io = "2.6"
     const val junit_jupiter = "5.6.2"
+
+    const val aggregating_profiler = "1.5.16"
+    const val jfix_stdlib = "3.0.0"
+    const val jfix_dynamic_property = "2.0.3"
 }
 
 object Libs {
@@ -34,7 +37,11 @@ object Libs {
     const val kotlin_jdk8 = "org.jetbrains.kotlin:kotlin-stdlib-jdk8:${Vers.kotlin}"
     const val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
 
+    const val aggregating_profiler = "ru.fix:aggregating-profiler:${Vers.aggregating_profiler}"
+    const val jfix_concurrency = "ru.fix:jfix-stdlib-concurrency:${Vers.jfix_stdlib}"
+    const val jfix_dynamic_property_api = "ru.fix:dynamic-property-api:${Vers.jfix_dynamic_property}"
     const val jfix_stdlib_socket = "ru.fix:jfix-stdlib-socket:${Vers.jfix_stdlib}"
+
     const val lombok = "org.projectlombok:lombok:${Vers.lombok}"
     const val jackson_annotations = "com.fasterxml.jackson.core:jackson-annotations:${Vers.jackson}"
     const val jackson_datatype_jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${Vers.jackson}"

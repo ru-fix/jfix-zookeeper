@@ -7,6 +7,7 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.fix.zookeeper.utils.Marshaller;
 
 import java.io.IOException;
 import java.nio.charset.Charset;

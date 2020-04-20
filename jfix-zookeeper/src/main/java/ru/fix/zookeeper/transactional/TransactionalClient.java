@@ -127,6 +127,11 @@ public class TransactionalClient {
         bridge.and().commit();
     }
 
+    public void commitAndClearTransaction() throws Exception {
+        commit();
+        operations.clear();
+    }
+
     @FunctionalInterface
     public interface TransactionCreator {
         void fillTransaction(TransactionalClient transactionalClient) throws Exception;

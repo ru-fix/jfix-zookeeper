@@ -10,7 +10,7 @@
         <appender-ref ref="STDOUT"/>
     </appender>
 
-    <logger name="ru.fix.zookeeper.lock.PersistentExpiringDistributedLock" level="trace"/>
+    <logger name="ru.fix.ru.fix.zookeeper.server.PersistentExpiringDistributedLock" level="trace"/>
     <logger name="ru.fix.zookeeper.lock.MarshallerTest" level="trace"/>
 
     <root level="info">

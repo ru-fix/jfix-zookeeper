@@ -1,4 +1,4 @@
-package ru.fix.zookeeper.lock;
+package ru.fix.zookeeper.utils;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -11,7 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 
 @Slf4j
-class Marshaller {
+public class Marshaller {
 
     private static final ObjectMapper mapper = new ObjectMapper()
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
@@ -19,7 +19,7 @@ class Marshaller {
             .registerModule(new JavaTimeModule())
             .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY);
 
-    static String marshall(Object serializedObject) throws JsonProcessingException {
+    public static String marshall(Object serializedObject) throws JsonProcessingException {
         try {
             return mapper.writeValueAsString(serializedObject);
         } catch (JsonProcessingException ex) {
@@ -28,7 +28,7 @@ class Marshaller {
         }
     }
 
-    static <T> T unmarshall(String json, Class<T> targetType) throws IOException {
+    public static <T> T unmarshall(String json, Class<T> targetType) throws IOException {
         try {
             return mapper.readValue(json, targetType);
         } catch (IOException ex) {

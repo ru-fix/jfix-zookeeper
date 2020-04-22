@@ -17,7 +17,9 @@ dependencies {
     implementation(Libs.jackson_datatype_jsr310)
     implementation(Libs.jackson_kotlin_module)
     implementation(Libs.apache_curator)
+    implementation("org.apache.curator:curator-x-discovery:4.3.0")
     implementation(Libs.apache_curator_test)
+    implementation(Libs.awaitility)
 
     compileOnly(Libs.lombok)
 

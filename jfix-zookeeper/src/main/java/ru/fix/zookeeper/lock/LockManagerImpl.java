@@ -146,7 +146,7 @@ public class LockManagerImpl implements AutoCloseable, LockManager {
             log.info("Method checkAndProlong lockId={}", lockId.getId());
             return lock.checkAndProlongIfExpiresIn(DEFAULT_RESERVATION_PERIOD_MS, DEFAULT_EXPIRATION_PERIOD_MS);
         } catch (Exception e) {
-            log.error("Failed to checkAndProlong persistent locks with lockId {} for workItem {}", lockId.getId(), e);
+            log.error("Failed to checkAndProlong persistent locks with lockId {}", lockId.getId(), e);
             return false;
         }
     }

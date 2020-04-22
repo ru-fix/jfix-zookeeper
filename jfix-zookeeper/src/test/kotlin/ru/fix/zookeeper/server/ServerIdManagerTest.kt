@@ -1,8 +1,10 @@
 package ru.fix.zookeeper.server
 
+import org.apache.curator.x.discovery.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
+import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.util.concurrent.CompletableFuture
@@ -17,13 +19,13 @@ internal class ServerIdManagerTest {
 
     @BeforeEach
     fun setUp() {
-        zkTestingServer = ZKTestingServer()
+        zkTestingServer = ZKTestingServer().also { it.start() }
         printer = ZkTreePrinter(zkTestingServer.client)
-        zkTestingServer.start()
     }
 
     @Test
     fun test() {
+
         println("Before" + printer.print(rootPath, true))
         createServerIdManager()
         println("After 1" + printer.print(rootPath, true))
@@ -48,6 +50,7 @@ internal class ServerIdManagerTest {
     ) = ServerIdManager(
             zkTestingServer.createClient(),
             rootPath,
-            appName
+            appName,
+            NoopProfiler()
     )
 }

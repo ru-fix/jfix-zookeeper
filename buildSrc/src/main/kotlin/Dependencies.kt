@@ -17,6 +17,7 @@ object Vers {
     const val logback = "1.2.3"
     const val commons_io = "2.6"
     const val junit_jupiter = "5.6.2"
+    const val awaitility = "4.0.2"
 
     const val aggregating_profiler = "1.5.16"
     const val jfix_stdlib = "3.0.0"
@@ -42,6 +43,7 @@ object Libs {
     const val jfix_dynamic_property_api = "ru.fix:dynamic-property-api:${Vers.jfix_dynamic_property}"
     const val jfix_stdlib_socket = "ru.fix:jfix-stdlib-socket:${Vers.jfix_stdlib}"
 
+    const val awaitility = "org.awaitility:awaitility:${Vers.awaitility}"
     const val lombok = "org.projectlombok:lombok:${Vers.lombok}"
     const val jackson_annotations = "com.fasterxml.jackson.core:jackson-annotations:${Vers.jackson}"
     const val jackson_datatype_jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${Vers.jackson}"

@@ -1,32 +1,14 @@
 package ru.fix.zookeeper.discovery
 
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import ru.fix.zookeeper.testing.ZKTestingServer
-import ru.fix.zookeeper.utils.ZkTreePrinter
+import ru.fix.zookeeper.AbstractZookeeperTest
 
-internal class ServiceDiscoveryWrapperTest {
-    private lateinit var zkTestingServer: ZKTestingServer
-
-    companion object {
-        private const val rootPath = "/zk-cluster/wwp"
-    }
-
-    @BeforeEach
-    fun setUp() {
-        zkTestingServer = ZKTestingServer().start()
-    }
-
-    private fun createDiscovery(appName: String = "bookkeeper") = ServiceDiscoveryWrapper(
-            curatorFramework = zkTestingServer.createClient(),
-            rootPath = rootPath,
-            applicationName = appName
-    )
+internal class ServiceDiscoveryWrapperTest : AbstractZookeeperTest() {
 
     @Test
     fun test() {
-        val s1 = createDiscovery("abs-gate")
-        val s2 = createDiscovery("abs-gate")
+        val s1 = createDiscovery("abs-rate")
+        val s2 = createDiscovery("abs-rate")
         val s3 = createDiscovery()
 
         println(s1.serverId)
@@ -36,5 +18,12 @@ internal class ServiceDiscoveryWrapperTest {
         println(zkTree())
     }
 
-    private fun zkTree() = ZkTreePrinter(zkTestingServer.client).print(rootPath)
+
+    private fun createDiscovery(
+            appName: String = "drugkeeper"
+    ) = ServiceDiscoveryWrapper(
+            curatorFramework = zkTestingServer.createClient(),
+            rootPath = rootPath,
+            applicationName = appName
+    )
 }

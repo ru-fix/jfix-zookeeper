@@ -6,7 +6,6 @@ import org.apache.curator.x.discovery.ServiceDiscoveryBuilder
 import org.apache.curator.x.discovery.ServiceInstance
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import ru.fix.zookeeper.server.ServerIdManager
 
 class ServiceDiscoveryWrapper(
         curatorFramework: CuratorFramework,
@@ -26,7 +25,7 @@ class ServiceDiscoveryWrapper(
         private set
 
     companion object {
-        private val logger: Logger = LoggerFactory.getLogger(ServerIdManager::class.java)
+        private val logger: Logger = LoggerFactory.getLogger(ServiceDiscoveryWrapper::class.java)
     }
 
     init {

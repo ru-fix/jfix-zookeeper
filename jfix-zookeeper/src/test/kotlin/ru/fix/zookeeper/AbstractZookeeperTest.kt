@@ -5,7 +5,7 @@ import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
 
 abstract class AbstractZookeeperTest {
-    protected lateinit var zkTestingServer: ZKTestingServer
+    protected lateinit var testingServer: ZKTestingServer
 
     protected companion object {
         const val rootPath = "/zk-cluster/wwp"
@@ -13,10 +13,10 @@ abstract class AbstractZookeeperTest {
 
     @BeforeEach
     fun setUp() {
-        zkTestingServer = ZKTestingServer()
+        testingServer = ZKTestingServer()
                 .withCloseOnJvmShutdown(true)
                 .start()
     }
 
-    protected fun zkTree(): String = ZkTreePrinter(zkTestingServer.client).print(rootPath)
+    protected fun zkTree(): String = ZkTreePrinter(testingServer.client).print(rootPath)
 }

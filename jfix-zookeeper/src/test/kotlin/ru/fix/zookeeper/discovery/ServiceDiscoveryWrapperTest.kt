@@ -1,5 +1,6 @@
 package ru.fix.zookeeper.discovery
 
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import ru.fix.zookeeper.AbstractZookeeperTest
 
@@ -7,22 +8,31 @@ internal class ServiceDiscoveryWrapperTest : AbstractZookeeperTest() {
 
     @Test
     fun test() {
-        val s1 = createDiscovery("abs-rate")
-        val s2 = createDiscovery("abs-rate")
-        val s3 = createDiscovery()
-
-        println(s1.serverId)
-        println(s2.serverId)
-        println(s3.serverId)
+        createDiscovery("abs-rate")
+        createDiscovery("abs-rate")
+        createDiscovery()
 
         println(zkTree())
+        assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
+    }
+
+    private fun assertInstances(services: Map<String, Set<String>>) {
+        val client = testingServer.client
+        services.forEach { (service, instances) ->
+            instances.forEach { instance ->
+                assertNotNull(
+                        client.checkExists()
+                                .forPath("$rootPath/services/$service/$instance")
+                )
+            }
+        }
     }
 
 
     private fun createDiscovery(
             appName: String = "drugkeeper"
     ) = ServiceDiscoveryWrapper(
-            curatorFramework = zkTestingServer.createClient(),
+            curatorFramework = testingServer.createClient(),
             rootPath = rootPath,
             applicationName = appName
     )

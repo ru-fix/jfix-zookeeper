@@ -4,56 +4,48 @@ import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.x.discovery.ServiceDiscovery
 import org.apache.curator.x.discovery.ServiceDiscoveryBuilder
 import org.apache.curator.x.discovery.ServiceInstance
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+import ru.fix.zookeeper.server.ServerIdManager
 
 class ServiceDiscoveryWrapper(
-        private val curatorFramework: CuratorFramework,
+        curatorFramework: CuratorFramework,
         rootPath: String,
         applicationName: String
 ) : AutoCloseable {
     private val serviceRegistrationPath = "$rootPath/services"
-    private val discoveryService: ServiceDiscovery<Void> = ServiceDiscoveryBuilder
+    private val serviceDiscovery: ServiceDiscovery<Void> = ServiceDiscoveryBuilder
             .builder(Void::class.java)
             .basePath(serviceRegistrationPath)
             .client(curatorFramework)
             .build()
-    lateinit var serverId: String
+    private val instanceIdGenerator = InstanceIdGenerator(
+            serviceDiscovery, curatorFramework, serviceRegistrationPath
+    )
+    var serverId: String
         private set
 
-    init {
-        discoveryService.start()
-        val next = nextServerId()
-        discoveryService.registerService(
-                ServiceInstance.builder<Void>()
-                        .name(applicationName)
-                        .id(next)
-                        .build()
-        )
+    companion object {
+        private val logger: Logger = LoggerFactory.getLogger(ServerIdManager::class.java)
     }
 
-    private fun nextServerId(): String {
-        if (curatorFramework.checkExists().forPath(serviceRegistrationPath) == null) {
-            curatorFramework.create()
-                    .creatingParentsIfNeeded()
-                    .forPath(serviceRegistrationPath)
-        }
+    init {
+        serviceDiscovery.start()
+        serverId = instanceIdGenerator.nextId()
+        logger.info("Service discovery started and generated id=$serverId for service=$applicationName")
 
-        val registeredServices = discoveryService.queryForNames()
-                .map { serviceName ->
-                    serviceName to discoveryService.serviceProviderBuilder()
-                            .serviceName(serviceName)
-                            .build()
-                            .also { it.start() }
-                }.toMap().toMutableMap()
-
-        serverId = ((registeredServices.flatMap { it.value.allInstances }
-                .map { it.id.toInt() }
-                .max() ?: 0) + 1).toString()
-        registeredServices.values.forEach { it.close() }
-        return serverId
+        serviceDiscovery.registerService(
+                ServiceInstance.builder<Void>()
+                        .name(applicationName)
+                        .id(serverId)
+                        .build()
+        )
+        logger.info("Service discovery registered instance with id=$serverId for service=$applicationName")
     }
 
     override fun close() {
-        discoveryService.close()
+        serviceDiscovery.close()
+        logger.info("Service discovery closed")
     }
 
 }

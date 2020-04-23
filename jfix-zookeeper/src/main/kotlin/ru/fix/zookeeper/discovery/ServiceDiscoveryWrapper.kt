@@ -4,10 +4,9 @@ import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.x.discovery.ServiceDiscovery
 import org.apache.curator.x.discovery.ServiceDiscoveryBuilder
 import org.apache.curator.x.discovery.ServiceInstance
-import org.apache.curator.x.discovery.ServiceProvider
 
 class ServiceDiscoveryWrapper(
-        curatorFramework: CuratorFramework,
+        private val curatorFramework: CuratorFramework,
         rootPath: String,
         applicationName: String
 ) : AutoCloseable {
@@ -17,18 +16,28 @@ class ServiceDiscoveryWrapper(
             .basePath(serviceRegistrationPath)
             .client(curatorFramework)
             .build()
-    private val registeredServices: Map<String, ServiceProvider<Void>>
-    val serviceProvider: ServiceProvider<Void>
+    lateinit var serverId: String
+        private set
 
     init {
         discoveryService.start()
+        val next = nextServerId()
+        discoveryService.registerService(
+                ServiceInstance.builder<Void>()
+                        .name(applicationName)
+                        .id(next)
+                        .build()
+        )
+    }
 
-        serviceProvider = discoveryService.serviceProviderBuilder()
-                .serviceName(applicationName)
-                .build()
-                .also { it.start() }
+    private fun nextServerId(): String {
+        if (curatorFramework.checkExists().forPath(serviceRegistrationPath) == null) {
+            curatorFramework.create()
+                    .creatingParentsIfNeeded()
+                    .forPath(serviceRegistrationPath)
+        }
 
-        registeredServices = discoveryService.queryForNames()
+        val registeredServices = discoveryService.queryForNames()
                 .map { serviceName ->
                     serviceName to discoveryService.serviceProviderBuilder()
                             .serviceName(serviceName)
@@ -36,27 +45,15 @@ class ServiceDiscoveryWrapper(
                             .also { it.start() }
                 }.toMap().toMutableMap()
 
-        discoveryService.registerService(
-                ServiceInstance.builder<Void>()
-                        .name(applicationName)
-                        .id(nextServerId())
-                        .build()
-        )
-        registeredServices.put(applicationName, serviceProvider)
-
-    }
-
-    private fun nextServerId(): String {
-        return ((registeredServices.flatMap { it.value.allInstances }
-                .also { println(it)
-                    println("") }
+        serverId = ((registeredServices.flatMap { it.value.allInstances }
                 .map { it.id.toInt() }
                 .max() ?: 0) + 1).toString()
+        registeredServices.values.forEach { it.close() }
+        return serverId
     }
 
     override fun close() {
         discoveryService.close()
-        registeredServices.forEach { it.value.close() }
-        serviceProvider.close()
     }
+
 }

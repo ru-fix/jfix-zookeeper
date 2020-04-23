@@ -6,9 +6,7 @@ import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
 
 internal class ServiceDiscoveryWrapperTest {
-
     private lateinit var zkTestingServer: ZKTestingServer
-    private lateinit var printer: ZkTreePrinter
 
     companion object {
         private const val rootPath = "/zk-cluster/wwp"
@@ -17,7 +15,6 @@ internal class ServiceDiscoveryWrapperTest {
     @BeforeEach
     fun setUp() {
         zkTestingServer = ZKTestingServer().start()
-        printer = ZkTreePrinter(zkTestingServer.client)
     }
 
     private fun createDiscovery(appName: String = "bookkeeper") = ServiceDiscoveryWrapper(
@@ -29,14 +26,15 @@ internal class ServiceDiscoveryWrapperTest {
     @Test
     fun test() {
         val s1 = createDiscovery("abs-gate")
-        val s2 = createDiscovery()
+        val s2 = createDiscovery("abs-gate")
         val s3 = createDiscovery()
 
-        println(s1.serviceProvider.allInstances)
-        println(s2.serviceProvider.allInstances)
-        println(s3.serviceProvider.allInstances)
+        println(s1.serverId)
+        println(s2.serverId)
+        println(s3.serverId)
 
-        println("                      ")
-        printer.print(rootPath)
+        println(zkTree())
     }
+
+    private fun zkTree() = ZkTreePrinter(zkTestingServer.client).print(rootPath)
 }

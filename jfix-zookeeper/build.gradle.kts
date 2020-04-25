@@ -13,6 +13,10 @@ dependencies {
     implementation(Libs.jfix_concurrency)
     implementation(Libs.jfix_dynamic_property_api)
 
+    implementation(Libs.log4j_kotlin)
+    implementation(Libs.log4j_core)
+    implementation(Libs.slf4j_over_log4j)
+
     implementation(Libs.jackson_annotations)
     implementation(Libs.jackson_datatype_jsr310)
     implementation(Libs.jackson_kotlin_module)
@@ -22,7 +26,6 @@ dependencies {
 
     compileOnly(Libs.lombok)
 
-    testImplementation(Libs.logback)
     testImplementation(Libs.commons_io)
     testImplementation(Libs.junit_jupiter_engine)
     testImplementation(Libs.junit_jupiter_api)

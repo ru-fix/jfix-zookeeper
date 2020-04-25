@@ -18,5 +18,5 @@ abstract class AbstractZookeeperTest {
                 .start()
     }
 
-    protected fun zkTree(): String = ZkTreePrinter(testingServer.client).print(rootPath)
+    protected fun zkTree(): String = ZkTreePrinter(testingServer.client).print(rootPath, true)
 }

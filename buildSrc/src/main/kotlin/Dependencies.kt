@@ -15,10 +15,9 @@ object Vers {
     const val jackson = "2.10.3"
     const val jackson_kotlin = "2.10.3"
     const val apache_curator = "4.3.0"
-    const val logback = "1.2.3"
     const val commons_io = "2.6"
     const val junit_jupiter = "5.6.2"
-
+    const val log4j = "2.12.0"
     const val aggregating_profiler = "1.5.16"
     const val jfix_stdlib = "3.0.0"
     const val jfix_dynamic_property = "2.0.3"
@@ -39,6 +38,11 @@ object Libs {
     const val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
     const val kotlinx_coroutines_core = "org.jetbrains.kotlinx:kotlinx-coroutines-core:${Vers.kotlin_coroutines}"
 
+    const val log4j = "org.apache.logging.log4j:log4j-api:${Vers.log4j}"
+    const val log4j_core = "org.apache.logging.log4j:log4j-core:${Vers.log4j}"
+    const val log4j_kotlin = "org.apache.logging.log4j:log4j-api-kotlin:1.0.0"
+    const val slf4j_over_log4j = "org.apache.logging.log4j:log4j-slf4j-impl:${Vers.log4j}"
+
     const val aggregating_profiler = "ru.fix:aggregating-profiler:${Vers.aggregating_profiler}"
     const val jfix_concurrency = "ru.fix:jfix-stdlib-concurrency:${Vers.jfix_stdlib}"
     const val jfix_dynamic_property_api = "ru.fix:dynamic-property-api:${Vers.jfix_dynamic_property}"
@@ -53,6 +57,5 @@ object Libs {
     const val apache_curator_test = "org.apache.curator:curator-test:${Vers.apache_curator}"
     const val junit_jupiter_engine = "org.junit.jupiter:junit-jupiter-engine:${Vers.junit_jupiter}"
     const val junit_jupiter_api = "org.junit.jupiter:junit-jupiter-api:${Vers.junit_jupiter}"
-    const val logback = "ch.qos.logback:logback-classic:${Vers.logback}"
     const val commons_io = "commons-io:commons-io:${Vers.commons_io}"
 }

@@ -1,11 +1,11 @@
-import org.gradle.kotlin.dsl.*
-
 plugins {
     java
     kotlin("jvm")
 }
 
 dependencies {
+    implementation(Libs.kotlinx_coroutines_core)
+
     annotationProcessor(Libs.lombok)
 
     implementation(Libs.jfix_stdlib_socket)
@@ -17,9 +17,8 @@ dependencies {
     implementation(Libs.jackson_datatype_jsr310)
     implementation(Libs.jackson_kotlin_module)
     implementation(Libs.apache_curator)
-    implementation("org.apache.curator:curator-x-discovery:4.3.0")
+    implementation(Libs.apache_curator_discovery)
     implementation(Libs.apache_curator_test)
-    implementation(Libs.awaitility)
 
     compileOnly(Libs.lombok)
 

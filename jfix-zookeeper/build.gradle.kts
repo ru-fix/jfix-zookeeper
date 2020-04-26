@@ -21,7 +21,6 @@ dependencies {
     implementation(Libs.jackson_datatype_jsr310)
     implementation(Libs.jackson_kotlin_module)
     implementation(Libs.apache_curator)
-    implementation(Libs.apache_curator_discovery)
     implementation(Libs.apache_curator_test)
 
     compileOnly(Libs.lombok)

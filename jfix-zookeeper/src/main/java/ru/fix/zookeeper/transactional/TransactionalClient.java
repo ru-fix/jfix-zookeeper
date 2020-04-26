@@ -94,17 +94,31 @@ public class TransactionalClient {
     }
 
 
-    public static void tryCommit(CuratorFramework curatorFramework, int times, TransactionCreator transactionCreator)
-            throws Exception {
+    public static void tryCommit(
+            CuratorFramework curatorFramework,
+            int times,
+            TransactionCreator transactionCreator
+    ) throws Exception {
+        tryCommit(curatorFramework, times, transactionCreator, e -> {
+            throw e;
+        });
+    }
+
+    public static void tryCommit(
+            CuratorFramework client,
+            int times,
+            TransactionCreator inTransaction,
+            TransactionCreationErrorHandler onError
+    ) throws Exception {
         for (int i = 0; i < times; i++) {
             try {
-                TransactionalClient transaction = createTransaction(curatorFramework);
-                transactionCreator.fillTransaction(transaction);
+                TransactionalClient transaction = createTransaction(client);
+                inTransaction.fillTransaction(transaction);
                 transaction.commit();
                 break;
             } catch (Exception e) {
                 if (i == times - 1) {
-                    throw e;
+                    onError.onError(e);
                 }
             }
         }
@@ -127,14 +141,14 @@ public class TransactionalClient {
         bridge.and().commit();
     }
 
-    public void commitAndClearTransaction() throws Exception {
-        commit();
-        operations.clear();
-    }
-
     @FunctionalInterface
     public interface TransactionCreator {
         void fillTransaction(TransactionalClient transactionalClient) throws Exception;
+    }
+
+    @FunctionalInterface
+    public interface TransactionCreationErrorHandler {
+        void onError(Exception e) throws Exception;
     }
 
 }

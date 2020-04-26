@@ -3,6 +3,7 @@ package ru.fix.zookeeper.discovery
 import org.apache.curator.framework.CuratorFramework
 import org.apache.logging.log4j.kotlin.Logging
 import org.apache.zookeeper.CreateMode
+import ru.fix.zookeeper.transactional.TransactionalClient
 import ru.fix.zookeeper.utils.Marshaller
 import ru.fix.zookeeper.utils.ZkTreePrinter
 
@@ -45,32 +46,22 @@ class ServiceDiscovery(
 
     /**
      * Try {@link #config.countRegistrationAttempts} times to register instance.
-     * If unsuccessful, then throws an exception
+     * If unsuccessful, then log error
      */
     private fun initInstanceId() {
-        for (i in 1..config.countRegistrationAttempts) {
-            val instanceIdPath = "$serviceRegistrationPath/${instanceIdGenerator.nextId()}"
-            val instanceIdData = Marshaller.marshall(InstanceIdData(config.applicationName, System.currentTimeMillis()))
-            val createInstanceIdNode = curatorFramework
-                    .transactionOp().create()
-                    .withMode(CreateMode.EPHEMERAL)
-                    .forPath(instanceIdPath, instanceIdData.toByteArray())
-
-            try {
-                curatorFramework.transaction().forOperations(createInstanceIdNode)
-                break
-            } catch (e: Exception) {
-                if (i < config.countRegistrationAttempts) {
-                    logger.debug("Instance id creation in transaction failed", e)
-                    continue
-                } else {
+        TransactionalClient.tryCommit(curatorFramework, config.countRegistrationAttempts,
+                { tx ->
+                    val instanceIdPath = "$serviceRegistrationPath/${instanceIdGenerator.nextId()}"
+                    val instanceIdData = InstanceIdData(config.applicationName, System.currentTimeMillis())
+                    tx.createPathWithMode(instanceIdPath, CreateMode.EPHEMERAL)
+                            .setData(instanceIdPath, Marshaller.marshall(instanceIdData).toByteArray())
+                },
+                { error ->
                     logger.error("Failed to initialize service discovery and generate instance id. " +
                             "Number of attempts: ${config.countRegistrationAttempts}. " +
                             "Current registration node state: " +
-                            ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true), e)
-                    throw e
+                            ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true), error)
                 }
-            }
-        }
+        )
     }
 }

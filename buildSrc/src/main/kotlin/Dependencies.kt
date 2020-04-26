@@ -52,7 +52,6 @@ object Libs {
     const val jackson_datatype_jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${Vers.jackson}"
     const val jackson_kotlin_module = "com.fasterxml.jackson.module:jackson-module-kotlin:${Vers.jackson_kotlin}"
     const val apache_curator = "org.apache.curator:curator-recipes:${Vers.apache_curator}"
-    const val apache_curator_discovery = "org.apache.curator:curator-x-discovery:${Vers.apache_curator}"
     const val apache_curator_test = "org.apache.curator:curator-test:${Vers.apache_curator}"
     const val junit_jupiter_engine = "org.junit.jupiter:junit-jupiter-engine:${Vers.junit_jupiter}"
     const val junit_jupiter_api = "org.junit.jupiter:junit-jupiter-api:${Vers.junit_jupiter}"

@@ -29,4 +29,5 @@ dependencies {
     testImplementation(Libs.commons_io)
     testImplementation(Libs.junit_jupiter_engine)
     testImplementation(Libs.junit_jupiter_api)
+    testImplementation(Libs.junit_jupiter_params)
 }

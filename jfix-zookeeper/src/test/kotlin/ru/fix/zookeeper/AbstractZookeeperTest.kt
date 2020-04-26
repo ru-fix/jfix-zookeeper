@@ -12,7 +12,7 @@ abstract class AbstractZookeeperTest {
     }
 
     @BeforeEach
-    fun setUp() {
+    open fun setUp() {
         testingServer = ZKTestingServer()
                 .withCloseOnJvmShutdown(true)
                 .start()

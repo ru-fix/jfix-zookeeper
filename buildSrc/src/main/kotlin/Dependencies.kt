@@ -38,7 +38,6 @@ object Libs {
     const val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
     const val kotlinx_coroutines_core = "org.jetbrains.kotlinx:kotlinx-coroutines-core:${Vers.kotlin_coroutines}"
 
-    const val log4j = "org.apache.logging.log4j:log4j-api:${Vers.log4j}"
     const val log4j_core = "org.apache.logging.log4j:log4j-core:${Vers.log4j}"
     const val log4j_kotlin = "org.apache.logging.log4j:log4j-api-kotlin:1.0.0"
     const val slf4j_over_log4j = "org.apache.logging.log4j:log4j-slf4j-impl:${Vers.log4j}"
@@ -57,5 +56,6 @@ object Libs {
     const val apache_curator_test = "org.apache.curator:curator-test:${Vers.apache_curator}"
     const val junit_jupiter_engine = "org.junit.jupiter:junit-jupiter-engine:${Vers.junit_jupiter}"
     const val junit_jupiter_api = "org.junit.jupiter:junit-jupiter-api:${Vers.junit_jupiter}"
+    const val junit_jupiter_params = "org.junit.jupiter:junit-jupiter-params:${Vers.junit_jupiter}"
     const val commons_io = "commons-io:commons-io:${Vers.commons_io}"
 }

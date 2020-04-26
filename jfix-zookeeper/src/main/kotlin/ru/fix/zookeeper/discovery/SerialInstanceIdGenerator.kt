@@ -7,6 +7,14 @@ class SerialInstanceIdGenerator(
         private val serviceRegistrationPath: String
 ) : InstanceIdGenerator {
 
+    /**
+     * For example, there are 3 instances:
+     * └ services
+     *    └ 1
+     *    └ 2
+     *    └ 5
+     * @return  6 in this example, max + 1 value of already registered instances
+     */
     override fun nextId(): String {
         return (curatorFramework.children
                 .forPath(serviceRegistrationPath)

@@ -10,10 +10,13 @@
         </Console>
     </Appenders>
     <Loggers>
-        <Logger name="ru.fix" level="INFO">
+        <Logger name="ru.fix" level="INFO" additivity="false">
             <AppenderRef ref="console"/>
         </Logger>
-        <Logger name="ru.fix" level="DEBUG">
+        <Logger name="ru.fix" level="DEBUG" additivity="false">
+            <AppenderRef ref="console"/>
+        </Logger>
+        <Logger name="ru.fix" level="ERROR" additivity="false">
             <AppenderRef ref="console"/>
         </Logger>
         <Root level="info">

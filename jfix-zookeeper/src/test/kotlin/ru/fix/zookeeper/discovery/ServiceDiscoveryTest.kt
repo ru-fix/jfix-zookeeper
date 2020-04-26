@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import ru.fix.zookeeper.AbstractZookeeperTest
+import ru.fix.zookeeper.utils.Marshaller
 import java.util.*
 
 internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
@@ -62,17 +63,21 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
             instances.forEach { instanceId ->
                 val instancePath = "$rootPath/services/$instanceId"
                 assertNotNull(client.checkExists().forPath(instancePath))
-                assertEquals(service, client.data.forPath(instancePath).toString(Charsets.UTF_8))
+                val instanceIdDataInZkNode = Marshaller.unmarshall(
+                        client.data.forPath(instancePath).toString(Charsets.UTF_8),
+                        InstanceIdData::class.java
+                )
+                assertEquals(service, instanceIdDataInZkNode.applicationName)
             }
         }
     }
 
 
     private fun createDiscovery(
-            appName: String = UUID.randomUUID().toString()
+            appName: String = UUID.randomUUID().toString(),
+            registrationRetryCount: Int = 5
     ) = ServiceDiscovery(
             curatorFramework = testingServer.createClient(),
-            rootPath = rootPath,
-            applicationName = appName
+            config = ServiceDiscoveryConfig(rootPath, appName, registrationRetryCount)
     )
 }

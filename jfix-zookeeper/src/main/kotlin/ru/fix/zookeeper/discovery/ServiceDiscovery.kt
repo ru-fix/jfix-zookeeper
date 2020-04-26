@@ -3,13 +3,20 @@ package ru.fix.zookeeper.discovery
 import org.apache.curator.framework.CuratorFramework
 import org.apache.logging.log4j.kotlin.Logging
 import org.apache.zookeeper.CreateMode
+import ru.fix.zookeeper.utils.Marshaller
+import ru.fix.zookeeper.utils.ZkTreePrinter
 
+/**
+ * This class provides functionality of instance id management.
+ * When this class instantiated, it generates new instance id for this zookeeper client and registers this id in znode.
+ * When zookeeper client died or connection closed, znode with generated instance id also deleted.
+ * Service registration guarantees uniqueness of instance id in case of parallel startup on different JVMs.
+ */
 class ServiceDiscovery(
         private val curatorFramework: CuratorFramework,
-        rootPath: String,
-        private val applicationName: String
+        private val config: ServiceDiscoveryConfig
 ) : AutoCloseable {
-    private val serviceRegistrationPath = "$rootPath/services"
+    private val serviceRegistrationPath = "${config.rootPath}/services"
     private val instanceIdGenerator: InstanceIdGenerator
 
     companion object : Logging
@@ -36,23 +43,33 @@ class ServiceDiscovery(
         }
     }
 
+    /**
+     * Try {@link #config.countRegistrationAttempts} times to register instance.
+     * If unsuccessful, then throws an exception
+     */
     private fun initInstanceId() {
-        while (true) {
+        for (i in 1..config.countRegistrationAttempts) {
             val instanceIdPath = "$serviceRegistrationPath/${instanceIdGenerator.nextId()}"
-            val create = curatorFramework.transactionOp().create()
+            val instanceIdData = Marshaller.marshall(InstanceIdData(config.applicationName, System.currentTimeMillis()))
+            val createInstanceIdNode = curatorFramework
+                    .transactionOp().create()
                     .withMode(CreateMode.EPHEMERAL)
-                    .forPath(instanceIdPath, applicationName.toByteArray())
-
-            val newVersion = System.currentTimeMillis().toString().toByteArray()
-            val updateVersion = curatorFramework.transactionOp().setData()
-                    .forPath(serviceRegistrationPath, newVersion)
+                    .forPath(instanceIdPath, instanceIdData.toByteArray())
 
             try {
-                curatorFramework.transaction().forOperations(create, updateVersion)
+                curatorFramework.transaction().forOperations(createInstanceIdNode)
                 break
             } catch (e: Exception) {
-                logger.debug("Instance id creation in transaction failed", e)
-                continue
+                if (i < config.countRegistrationAttempts) {
+                    logger.debug("Instance id creation in transaction failed", e)
+                    continue
+                } else {
+                    logger.error("Failed to initialize service discovery and generate instance id. " +
+                            "Number of attempts: ${config.countRegistrationAttempts}. " +
+                            "Current registration node state: " +
+                            ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true), e)
+                    throw e
+                }
             }
         }
     }

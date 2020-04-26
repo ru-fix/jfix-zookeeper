@@ -12,7 +12,7 @@ import java.util.*
 internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
 
     @Test
-    fun test() {
+    fun `sequential startup of 3 instances should generate id from 1 to 3`() {
         createDiscovery("abs-rate")
         createDiscovery("abs-rate")
         createDiscovery("drugkeeper")
@@ -22,7 +22,7 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
     }
 
     @Test
-    fun test1() {
+    fun `instance id in zk should disappear when this instance closed the session`() {
         val instance1 = createDiscovery("abs-rate")
         createDiscovery("abs-rate")
         createDiscovery("drugkeeper")
@@ -37,27 +37,7 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
     }
 
     @Test
-    fun test2() = runBlocking {
-        val servicesCount = 10
-        val randomServiceNames = (1..servicesCount).map { UUID.randomUUID().toString() }
-        val services = randomServiceNames.map {
-            GlobalScope.async {
-                createDiscovery(it)
-            }
-        }
-
-        services.forEach { it.await() }
-        println(zkTree())
-        val countUniqueInstanceId = testingServer.client.children
-                .forPath("$rootPath/services")
-                .map { it.substringAfterLast("/").toInt() }
-                .toSet().size
-
-        assertEquals(servicesCount, countUniqueInstanceId)
-    }
-
-    @Test
-    fun test3() = runBlocking {
+    fun `parallel startup should be without instance id collisions`() = runBlocking {
         val servicesCount = 30
         val randomServiceNames = (1..servicesCount).map { UUID.randomUUID().toString() }
         val services = randomServiceNames.map {
@@ -68,12 +48,12 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
 
         services.forEach { it.await() }
         println(zkTree())
-        val countUniqueInstanceId = testingServer.client.children
+        val uniqueInstanceIds = testingServer.client.children
                 .forPath("$rootPath/services")
                 .map { it.substringAfterLast("/").toInt() }
-                .toSet().size
+                .toSet()
 
-        assertEquals(servicesCount, countUniqueInstanceId)
+        assertEquals(servicesCount, uniqueInstanceIds.size)
     }
 
     private fun assertInstances(services: Map<String, Set<String>>) {

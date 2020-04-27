@@ -1,9 +1,9 @@
 package ru.fix.zookeeper.discovery
 
 import org.apache.curator.framework.CuratorFramework
-import org.apache.logging.log4j.kotlin.Logging
 import org.apache.zookeeper.CreateMode
 import org.apache.zookeeper.KeeperException
+import org.slf4j.LoggerFactory
 import ru.fix.zookeeper.transactional.TransactionalClient
 import ru.fix.zookeeper.utils.Marshaller
 import ru.fix.zookeeper.utils.ZkTreePrinter
@@ -23,7 +23,9 @@ class ServiceDiscovery(
     lateinit var instanceId: String
         private set
 
-    companion object : Logging
+    companion object {
+        private val logger = LoggerFactory.getLogger(ServiceDiscovery::class.java)
+    }
 
     init {
         instanceIdGenerator = SerialInstanceIdGenerator(curatorFramework, serviceRegistrationPath)

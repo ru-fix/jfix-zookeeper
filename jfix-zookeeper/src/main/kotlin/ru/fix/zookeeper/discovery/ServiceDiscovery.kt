@@ -3,6 +3,7 @@ package ru.fix.zookeeper.discovery
 import org.apache.curator.framework.CuratorFramework
 import org.apache.logging.log4j.kotlin.Logging
 import org.apache.zookeeper.CreateMode
+import org.apache.zookeeper.KeeperException
 import ru.fix.zookeeper.transactional.TransactionalClient
 import ru.fix.zookeeper.utils.Marshaller
 import ru.fix.zookeeper.utils.ZkTreePrinter
@@ -19,6 +20,8 @@ class ServiceDiscovery(
 ) : AutoCloseable {
     private val serviceRegistrationPath = "${config.rootPath}/services"
     private val instanceIdGenerator: InstanceIdGenerator
+    lateinit var instanceId: String
+        private set
 
     companion object : Logging
 
@@ -39,8 +42,10 @@ class ServiceDiscovery(
             curatorFramework.create()
                     .creatingParentsIfNeeded()
                     .forPath(serviceRegistrationPath, currentVersion)
+        } catch (e: KeeperException.NodeExistsException) {
+            logger.debug("Node $serviceRegistrationPath is already initialized", e)
         } catch (e: Exception) {
-            logger.debug("Node $serviceRegistrationPath is already initialized")
+            logger.error("Illegal state when create path: $serviceRegistrationPath", e)
         }
     }
 
@@ -51,10 +56,12 @@ class ServiceDiscovery(
     private fun initInstanceId() {
         TransactionalClient.tryCommit(curatorFramework, config.countRegistrationAttempts,
                 { tx ->
-                    val instanceIdPath = "$serviceRegistrationPath/${instanceIdGenerator.nextId()}"
+                    val instanceId = instanceIdGenerator.nextId()
+                    val instanceIdPath = "$serviceRegistrationPath/$instanceId"
                     val instanceIdData = InstanceIdData(config.applicationName, System.currentTimeMillis())
                     tx.createPathWithMode(instanceIdPath, CreateMode.EPHEMERAL)
                             .setData(instanceIdPath, Marshaller.marshall(instanceIdData).toByteArray())
+                    this.instanceId = instanceId
                 },
                 { error ->
                     logger.error("Failed to initialize service discovery and generate instance id. " +

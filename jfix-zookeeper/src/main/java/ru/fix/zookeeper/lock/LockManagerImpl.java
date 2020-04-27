@@ -15,7 +15,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Acquires locks
+ * Acquires locks and releases them.
+ * Periodically prolongs acquired locks.
  *
  * @author Kamil Asfandiyarov
  */

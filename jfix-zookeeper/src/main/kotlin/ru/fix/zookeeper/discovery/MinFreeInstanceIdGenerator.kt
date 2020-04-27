@@ -14,8 +14,6 @@ class MinFreeInstanceIdGenerator(
      *    └ 2
      *    └ 5
      * @return  3 in this example, minimal free instance id
-     * i: 1 2 5
-     * x: 0 1 2
      */
     override fun nextId(): String {
         return (curatorFramework.children

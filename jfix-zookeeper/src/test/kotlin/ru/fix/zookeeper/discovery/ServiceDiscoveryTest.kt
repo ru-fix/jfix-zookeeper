@@ -100,6 +100,7 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
             registrationRetryCount: Int = 5
     ) = ServiceDiscovery(
             curatorFramework = testingServer.createClient(),
+            instanceIdGenerator = MinFreeInstanceIdGenerator(testingServer.client, "$rootPath/services"),
             config = ServiceDiscoveryConfig(rootPath, appName, registrationRetryCount)
     )
 }

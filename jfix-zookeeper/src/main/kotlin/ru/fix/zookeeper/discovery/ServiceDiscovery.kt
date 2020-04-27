@@ -16,10 +16,10 @@ import ru.fix.zookeeper.utils.ZkTreePrinter
  */
 class ServiceDiscovery(
         private val curatorFramework: CuratorFramework,
+        private val instanceIdGenerator: InstanceIdGenerator,
         private val config: ServiceDiscoveryConfig
 ) : AutoCloseable {
     private val serviceRegistrationPath = "${config.rootPath}/services"
-    private val instanceIdGenerator: InstanceIdGenerator
     lateinit var instanceId: String
         private set
 
@@ -28,7 +28,6 @@ class ServiceDiscovery(
     }
 
     init {
-        instanceIdGenerator = SerialInstanceIdGenerator(curatorFramework, serviceRegistrationPath)
         initServiceRegistrationPath()
         initInstanceId()
     }

@@ -16,11 +16,11 @@ class MinFreeInstanceIdGenerator(
      * @return  3 in this example, minimal free instance id
      */
     override fun nextId(): String {
-        return (curatorFramework.children
+        return curatorFramework.children
                 .forPath(serviceRegistrationPath)
                 .map { it.toInt() }
                 .sorted()
                 .fold(1) { acc, id -> if (id == acc) acc + 1 else acc }
-                .toString())
+                .toString()
     }
 }

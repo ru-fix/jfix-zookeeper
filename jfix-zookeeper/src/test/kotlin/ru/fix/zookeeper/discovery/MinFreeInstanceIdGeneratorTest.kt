@@ -1,20 +1,20 @@
 package ru.fix.zookeeper.discovery
 
-import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import ru.fix.zookeeper.AbstractZookeeperTest
 
-internal class SerialInstanceIdGeneratorTest : AbstractZookeeperTest() {
+internal class MinFreeInstanceIdGeneratorTest : AbstractZookeeperTest() {
     private lateinit var idGenerator: InstanceIdGenerator
     private lateinit var registrationPath: String
 
     @BeforeEach
     fun setUpSecond() {
         registrationPath = "$rootPath/services"
-        idGenerator = SerialInstanceIdGenerator(testingServer.createClient(), registrationPath)
+        idGenerator = MinFreeInstanceIdGenerator(testingServer.createClient(), registrationPath)
         testingServer.client.create().orSetData()
                 .creatingParentsIfNeeded()
                 .forPath(registrationPath)
@@ -29,13 +29,13 @@ internal class SerialInstanceIdGeneratorTest : AbstractZookeeperTest() {
     }
 
     @Test
-    fun `next instance id should be greater by 1 than max instance id that already initiated`() {
+    fun `next instance id should be min free id`() {
         initInstanceIds(20)
         testingServer.client
                 .create()
                 .forPath("$registrationPath/200")
         val instanceId = idGenerator.nextId()
-        assertEquals("201", instanceId)
+        assertEquals("21", instanceId)
     }
 
     private fun initInstanceIds(count: Int) {

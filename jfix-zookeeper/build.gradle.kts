@@ -13,7 +13,7 @@ dependencies {
     implementation(Libs.jfix_concurrency)
     implementation(Libs.jfix_dynamic_property_api)
 
-    implementation(Libs.slf4j_over_log4j)
+    implementation(Libs.slf4j)
 
     implementation(Libs.jackson_annotations)
     implementation(Libs.jackson_datatype_jsr310)

@@ -17,7 +17,7 @@ object Vers {
     const val apache_curator = "4.3.0"
     const val commons_io = "2.6"
     const val junit_jupiter = "5.6.2"
-    const val log4j = "2.12.0"
+    const val slf4j = "1.7.30"
     const val aggregating_profiler = "1.5.16"
     const val jfix_stdlib = "3.0.0"
     const val jfix_dynamic_property = "2.0.3"
@@ -38,7 +38,7 @@ object Libs {
     const val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
     const val kotlinx_coroutines_core = "org.jetbrains.kotlinx:kotlinx-coroutines-core:${Vers.kotlin_coroutines}"
 
-    const val slf4j_over_log4j = "org.apache.logging.log4j:log4j-slf4j-impl:${Vers.log4j}"
+    const val slf4j = "org.slf4j:slf4j-api:${Vers.slf4j}"
 
     const val aggregating_profiler = "ru.fix:aggregating-profiler:${Vers.aggregating_profiler}"
     const val jfix_concurrency = "ru.fix:jfix-stdlib-concurrency:${Vers.jfix_stdlib}"

@@ -1,7 +1,7 @@
 {
-  "ip": "93.184.216.34",
-  "hostname": "example.org",
-  "serverId": "2336799_DOMAIN_COM-VRSN",
   "uuid": "1cf7407a-9f15-11e9-a2a3-2a2ae2dbcce4",
-  "expirationDate": 1562324887282
+  "expirationDate": 1562324887282,
+  "serverId": "2336799_DOMAIN_COM-VRSN",
+  "ip": "93.184.216.34",
+  "hostname": "example.org"
 }

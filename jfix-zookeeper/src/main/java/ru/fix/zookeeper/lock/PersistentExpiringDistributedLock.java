@@ -108,7 +108,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                      */
                     try {
                         expirationDate = System.currentTimeMillis() + acquirePeriod;
-                        LockData lockData = new LockData(lockId.getId(), expirationDate, serverId, logger);
+                        LockData lockData = new LockData(lockId.getId(), expirationDate, serverId);
                         curatorFramework.create()
                                 .creatingParentContainersIfNeeded()
                                 .forPath(lockId.getNodePath(), encodeLockData(lockData));
@@ -214,7 +214,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     private boolean zkTxUpdateLockData(long acquirePeriod, Stat nodeStat) throws Exception {
         try {
             long nextExpirationDate = System.currentTimeMillis() + acquirePeriod;
-            LockData lockData = new LockData(lockId.getId(), nextExpirationDate, serverId, logger);
+            LockData lockData = new LockData(lockId.getId(), nextExpirationDate, serverId);
             curatorFramework.inTransaction()
                     .check().withVersion(nodeStat.getVersion()).forPath(lockId.getNodePath()).and()
                     .setData().forPath(lockId.getNodePath(), encodeLockData(lockData)).and().commit();

@@ -6,12 +6,13 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.kotlin.KotlinModule;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
-@Slf4j
 public class Marshaller {
+    private static final Logger logger = LoggerFactory.getLogger(Marshaller.class);
 
     private static final ObjectMapper mapper = new ObjectMapper()
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
@@ -23,7 +24,7 @@ public class Marshaller {
         try {
             return mapper.writeValueAsString(serializedObject);
         } catch (JsonProcessingException ex) {
-            log.trace("Failed to marshalling pojo. Object details: {}", serializedObject, ex);
+            logger.trace("Failed to marshalling pojo. Object details: {}", serializedObject, ex);
             throw ex;
         }
     }
@@ -32,7 +33,7 @@ public class Marshaller {
         try {
             return mapper.readValue(json, targetType);
         } catch (IOException ex) {
-            log.trace("Failed to unmarshall json text to type {}. Json: {}", targetType, json, ex);
+            logger.trace("Failed to unmarshall json text to type {}. Json: {}", targetType, json, ex);
             throw ex;
         }
     }

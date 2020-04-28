@@ -39,7 +39,7 @@ object Libs {
     const val jfix_stdlib_socket = "ru.fix:jfix-stdlib-socket:${Vers.jfix_stdlib}"
 
     const val slf4j = "org.slf4j:slf4j-api:${Vers.slf4j}"
-    const val log4j = "org.apache.logging.log4j:log4j:${Vers.log4j}"
+    const val log4j = "org.apache.logging.log4j:log4j-slf4j-impl:${Vers.log4j}"
     const val jackson_annotations = "com.fasterxml.jackson.core:jackson-annotations:${Vers.jackson}"
     const val jackson_datatype_jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${Vers.jackson}"
     const val jackson_kotlin_module = "com.fasterxml.jackson.module:jackson-module-kotlin:${Vers.jackson_kotlin}"

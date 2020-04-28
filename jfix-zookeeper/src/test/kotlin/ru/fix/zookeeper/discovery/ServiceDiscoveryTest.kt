@@ -4,8 +4,8 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
+import org.apache.curator.framework.CuratorFramework
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
@@ -80,6 +80,27 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
         assertInstances(mapOf("abs-rate" to setOf("1")))
     }
 
+
+    @Test
+    fun `instance id should be in range from 1 to 127, error thrown otherwise`() {
+        val maxAvailableId = 127
+        repeat(maxAvailableId) {
+            createDiscovery(UUID.randomUUID().toString(), 20, testingServer.client)
+        }
+        repeat(10) {
+            assertThrows(AssertionError::class.java) {
+                createDiscovery(UUID.randomUUID().toString(), 20, testingServer.client)
+            }
+        }
+        println(zkTree())
+        val uniqueInstanceIds = testingServer.client.children
+                .forPath("$rootPath/services")
+                .map { it.substringAfterLast("/").toInt() }
+                .toSet()
+
+        assertEquals(maxAvailableId, uniqueInstanceIds.size)
+    }
+
     private fun assertInstances(services: Map<String, Set<String>>) {
         val client = testingServer.client
         services.forEach { (service, instances) ->
@@ -97,9 +118,10 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
 
     private fun createDiscovery(
             appName: String = UUID.randomUUID().toString(),
-            registrationRetryCount: Int = 5
+            registrationRetryCount: Int = 5,
+            client: CuratorFramework = testingServer.createClient()
     ) = ServiceDiscovery(
-            curatorFramework = testingServer.createClient(),
+            curatorFramework = client,
             instanceIdGenerator = MinFreeInstanceIdGenerator(testingServer.client, "$rootPath/services"),
             config = ServiceDiscoveryConfig(rootPath, appName, registrationRetryCount)
     )

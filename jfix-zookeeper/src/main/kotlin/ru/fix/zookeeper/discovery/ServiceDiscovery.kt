@@ -25,6 +25,7 @@ class ServiceDiscovery(
 
     companion object {
         private val logger = LoggerFactory.getLogger(ServiceDiscovery::class.java)
+        private const val MAX_INSTANCES_COUNT = 127
     }
 
     init {
@@ -52,12 +53,16 @@ class ServiceDiscovery(
 
     /**
      * Try {@link #config.countRegistrationAttempts} times to register instance.
+     * Generate instance id, this id should be in range 1..127, assertion error will be thrown otherwise.
      * If unsuccessful, then log error
      */
     private fun initInstanceId() {
         TransactionalClient.tryCommit(curatorFramework, config.countRegistrationAttempts,
                 { tx ->
                     val instanceId = instanceIdGenerator.nextId()
+                    assert(instanceId.toInt() <= MAX_INSTANCES_COUNT) {
+                        "Generated instance id has value $instanceId, but should be in range 1..$MAX_INSTANCES_COUNT"
+                    }
                     val instanceIdPath = "$serviceRegistrationPath/$instanceId"
                     val instanceIdData = InstanceIdData(config.applicationName, System.currentTimeMillis())
                     tx.createPathWithMode(instanceIdPath, CreateMode.EPHEMERAL)

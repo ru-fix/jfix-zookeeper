@@ -1,26 +1,26 @@
 package ru.fix.zookeeper.lock
 
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.async
+import kotlinx.coroutines.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import ru.fix.aggregating.profiler.NoopProfiler
+import ru.fix.aggregating.profiler.Profiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.stdlib.concurrency.threads.NamedExecutors
 import ru.fix.zookeeper.AbstractZookeeperTest
+import java.util.concurrent.ExecutorService
 
 internal class LockManagerImplTest : AbstractZookeeperTest() {
     private lateinit var lockManager: LockManager
 
     @BeforeEach
     fun setUpSecond() {
-        lockManager = LockManagerImpl(testingServer.createClient(), "test-worker", NoopProfiler())
+        lockManager = lockManager()
     }
 
     @Test
-    fun test() {
+    fun `node of lock created after acquiring and removed after releasing lock`() {
         val lockId = LockIdentity("lock-1", "$rootPath/locks/lock-1")
         lockManager.tryAcquire(lockId) {}
 
@@ -33,7 +33,7 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
     }
 
     @Test
-    fun test1() {
+    fun `nodes of locks removed after close of zk client connection`() {
         val lockId1 = LockIdentity("lock-1", "$rootPath/locks/lock-1")
         val lockId2 = LockIdentity("lock-2", "$rootPath/locks/lock-2")
         lockManager.tryAcquire(lockId1) {}
@@ -50,27 +50,61 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
     }
 
     @Test
-    fun test3() {
+    fun `start 30 parallel workers and try lock and unlock on every of them`() = runBlocking {
         val locksCount = 30
-        val dispatcher = NamedExecutors.newDynamicPool("lock-manager-pool", DynamicProperty.of(12), NoopProfiler())
-                .asCoroutineDispatcher()
-        (1..locksCount).map {
+        val dispatcher = executor("lock-manager-launcher").asCoroutineDispatcher()
+
+        val lockManagers = (1..locksCount).map {
             GlobalScope.async(context = dispatcher) {
-                lockManager = LockManagerImpl(testingServer.createClient(), "test-worker", NoopProfiler())
+                lockManager("worker-$it")
             }
-        }
+        }.awaitAll()
 
-        val lockId = LockIdentity("lock-1", "$rootPath/locks/lock-1")
-        lockManager.tryAcquire(lockId) {}
+        lockManagers.map {
+            GlobalScope.async(context = dispatcher) {
+                val lockId = LockIdentity("lock-${it.workerId}", "$rootPath/locks/lock-${it.workerId}")
+                it.tryAcquire(lockId) {}
 
-        println("After acquiring lock: \n" + zkTree())
-        assertTrue(nodeExists(lockId.nodePath))
+                println("After acquiring lock: \n" + zkTree())
+                assertTrue(nodeExists(lockId.nodePath))
+            }
+        }.awaitAll()
 
-        lockManager.release(lockId)
-        println("After releasing lock: \n" + zkTree())
-        assertFalse(nodeExists(lockId.nodePath))
+        assertEquals(locksCount, lockManagers.first().curatorFramework.children.forPath("$rootPath/locks").size)
+
+        lockManagers.map {
+            GlobalScope.async(context = dispatcher) {
+                val lockId = LockIdentity("lock-${it.workerId}", "$rootPath/locks/lock-${it.workerId}")
+                it.release(lockId)
+
+                println("After releasing lock: \n" + zkTree())
+                assertFalse(nodeExists(lockId.nodePath))
+            }
+        }.awaitAll()
+
+        assertEquals(0, lockManagers.first().curatorFramework.children.forPath("$rootPath/locks").size)
     }
 
+    private fun executor(
+            poolName: String,
+            profiler: Profiler = NoopProfiler(),
+            poolSize: Int = 12
+    ) = NamedExecutors.newDynamicPool(
+            poolName,
+            DynamicProperty.of(poolSize),
+            profiler
+    )
+
+    private fun lockManager(
+            workerId: String = "test-worker",
+            profiler: Profiler = NoopProfiler(),
+            executor: ExecutorService = executor("lock-executor", profiler)
+    ) = LockManagerImpl(
+            testingServer.createClient(),
+            workerId,
+            executor,
+            profiler
+    )
 
     private fun nodeExists(path: String) = testingServer.client.checkExists().forPath(path) != null
 }

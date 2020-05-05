@@ -59,10 +59,11 @@ public class LockManagerImpl implements AutoCloseable, LockManager {
     public LockManagerImpl(
             CuratorFramework curatorFramework,
             String workerId,
+            ExecutorService persistentLockExecutor,
             Profiler profiler
     ) {
         lockProlongationTask = NamedExecutors.newSingleThreadScheduler("lock-prolongation", profiler);
-        persistentLockExecutor = NamedExecutors.newSingleThreadPool("persistent-lock-executor", profiler);
+        this.persistentLockExecutor = persistentLockExecutor;
         this.curatorFramework = curatorFramework;
         this.workerId = workerId;
 

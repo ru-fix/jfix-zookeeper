@@ -1,18 +1,16 @@
 package ru.fix.zookeeper.discovery
 
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.apache.curator.framework.CuratorFramework
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import ru.fix.aggregating.profiler.NoopProfiler
-import ru.fix.dynamic.property.api.DynamicProperty
-import ru.fix.stdlib.concurrency.threads.NamedExecutors
 import ru.fix.zookeeper.AbstractZookeeperTest
 import ru.fix.zookeeper.utils.Marshaller
 import java.util.*
+import java.util.concurrent.Executors
 
 internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
 
@@ -49,16 +47,16 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
     @Test
     fun `parallel startup should be without instance id collisions`() = runBlocking {
         val servicesCount = 30
-        val randomServiceNames = (1..servicesCount).map { UUID.randomUUID().toString() }
-        val dispatcher = NamedExecutors.newDynamicPool("discovery-pool", DynamicProperty.of(12), NoopProfiler())
-                .asCoroutineDispatcher()
-        val services = randomServiceNames.map {
-            GlobalScope.async(context = dispatcher) {
-                createDiscovery(it, 20)
-            }
-        }
+        val dispatcher = Executors.newFixedThreadPool(12) {
+            Thread(it, "discovery-pool")
+        }.asCoroutineDispatcher()
 
-        services.forEach { it.await() }
+        List(servicesCount) {
+            async(context = dispatcher) {
+                createDiscovery(UUID.randomUUID().toString(), 20)
+            }
+        }.awaitAll()
+
         println(zkTree())
         val uniqueInstanceIds = testingServer.client.children
                 .forPath("$rootPath/services")
@@ -83,15 +81,15 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
 
     @Test
     fun `instance id should be in range from 1 to 127, error thrown otherwise`() {
-        val maxAvailableId = 127
+        val maxAvailableId = 10
         repeat(maxAvailableId) {
-            createDiscovery(UUID.randomUUID().toString(), 20, testingServer.client)
+            createDiscovery(UUID.randomUUID().toString(), 20, testingServer.client, maxAvailableId)
         }
-        repeat(10) {
-            assertThrows(AssertionError::class.java) {
-                createDiscovery(UUID.randomUUID().toString(), 20, testingServer.client)
-            }
+
+        assertThrows(AssertionError::class.java) {
+            createDiscovery(UUID.randomUUID().toString(), 20, testingServer.client, maxAvailableId)
         }
+
         println(zkTree())
         val uniqueInstanceIds = testingServer.client.children
                 .forPath("$rootPath/services")
@@ -119,10 +117,12 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
     private fun createDiscovery(
             appName: String = UUID.randomUUID().toString(),
             registrationRetryCount: Int = 5,
-            client: CuratorFramework = testingServer.createClient()
+            client: CuratorFramework = testingServer.createClient(),
+            maxInstancesCount: Int = Int.MAX_VALUE
     ) = ServiceDiscovery(
             curatorFramework = client,
             instanceIdGenerator = MinFreeInstanceIdGenerator(testingServer.client, "$rootPath/services"),
-            config = ServiceDiscoveryConfig(rootPath, appName, registrationRetryCount)
+            config = ServiceDiscoveryConfig(rootPath, appName, registrationRetryCount),
+            maxInstancesCount = maxInstancesCount
     )
 }

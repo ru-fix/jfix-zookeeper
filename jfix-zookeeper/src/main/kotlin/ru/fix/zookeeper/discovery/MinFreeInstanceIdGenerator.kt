@@ -18,9 +18,15 @@ class MinFreeInstanceIdGenerator(
     override fun nextId(): String {
         return curatorFramework.children
                 .forPath(serviceRegistrationPath)
-                .map { it.toInt() }
-                .sorted()
-                .fold(1) { acc, id -> if (id == acc) acc + 1 else acc }
-                .toString()
+                .mapTo(ArrayList()) { it.toInt() }
+                .apply {
+                    sort()
+                }.fold(1) { acc, id ->
+                    if (id != acc) {
+                        return acc.toString()
+                    }
+
+                    acc + 1
+                }.toString()
     }
 }

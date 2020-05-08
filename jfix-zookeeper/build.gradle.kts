@@ -4,14 +4,13 @@ plugins {
 }
 
 dependencies {
-    implementation(Libs.jfix_concurrency)
-    implementation(Libs.slf4j)
+    implementation(Libs.slf4j_api)
     implementation(Libs.jackson_annotations)
     implementation(Libs.jackson_datatype_jsr310)
     implementation(Libs.jackson_kotlin_module)
-    implementation(Libs.apache_curator)
+    implementation(Libs.apache_curator_recipes)
 
-    testImplementation(Libs.log4j)
+    testImplementation(Libs.log4j_slf4j_impl)
     testImplementation(Libs.kotlinx_coroutines_core)
     testImplementation(Libs.junit_jupiter_engine)
     testImplementation(Libs.junit_jupiter_api)

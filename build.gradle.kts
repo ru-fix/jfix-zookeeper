@@ -1,13 +1,13 @@
 import de.marcphilipp.gradle.nexus.NexusPublishExtension
+import org.asciidoctor.gradle.AsciidoctorTask
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.dokka.gradle.DokkaTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-import kotlin.properties.ReadOnlyProperty
-import kotlin.reflect.KProperty
-import org.asciidoctor.gradle.AsciidoctorTask
 import java.time.Duration
 import java.time.temporal.ChronoUnit
+import kotlin.properties.ReadOnlyProperty
+import kotlin.reflect.KProperty
 
 buildscript {
     repositories {
@@ -29,9 +29,9 @@ plugins {
     kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
-    id(Libs.nexus_publish_plugin) version "0.3.0" apply false
-    id(Libs.nexus_staging_plugin) version "0.21.0"
-    id("org.asciidoctor.convert") version Vers.asciidoctor
+    id(Libs.nexus_publish_plugin) version Vers.nexus_publish_plugin apply false
+    id(Libs.nexus_staging_plugin) version Vers.nexus_staging_plugin
+    id(Libs.asciidoctor_convert) version Vers.asciidoctor_convert
 }
 
 /**
@@ -94,7 +94,6 @@ subprojects {
         outputDirectory = "$buildDir/dokka"
 
         //TODO: wait dokka support JDK11 - https://github.com/Kotlin/dokka/issues/428
-        //TODO: wait dokka fix https://github.com/Kotlin/dokka/issues/464
         enabled = false
     }
 

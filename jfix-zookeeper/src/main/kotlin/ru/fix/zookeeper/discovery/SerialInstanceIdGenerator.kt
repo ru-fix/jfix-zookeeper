@@ -18,6 +18,7 @@ class SerialInstanceIdGenerator(
     override fun nextId(): String {
         return (curatorFramework.children
                 .forPath(serviceRegistrationPath)
+                .asSequence()
                 .map { it.toInt() }
                 .max() ?: 0)
                 .plus(1).toString()

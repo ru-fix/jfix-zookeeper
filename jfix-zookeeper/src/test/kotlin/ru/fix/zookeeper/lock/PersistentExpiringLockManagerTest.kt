@@ -1,17 +1,17 @@
 package ru.fix.zookeeper.lock
 
-import kotlinx.coroutines.*
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import ru.fix.aggregating.profiler.NoopProfiler
-import ru.fix.aggregating.profiler.Profiler
-import ru.fix.dynamic.property.api.DynamicProperty
-import ru.fix.stdlib.concurrency.threads.NamedExecutors
 import ru.fix.zookeeper.AbstractZookeeperTest
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
-internal class PersistentExpiringLockManagerTest : AbstractZookeeperTest() {
+internal class LockManagerImplTest : AbstractZookeeperTest() {
     private lateinit var lockManager: LockManager
 
     @BeforeEach
@@ -55,15 +55,16 @@ internal class PersistentExpiringLockManagerTest : AbstractZookeeperTest() {
         val dispatcher = executor("lock-manager-launcher").asCoroutineDispatcher()
 
         val lockManagers = (1..locksCount).map {
-            GlobalScope.async(context = dispatcher) {
+            async(context = dispatcher) {
                 lockManager("worker-$it")
             }
         }.awaitAll()
 
         lockManagers.map {
-            GlobalScope.async(context = dispatcher) {
+            async(context = dispatcher) {
                 val lockId = LockIdentity("lock-${it.workerId}", "$rootPath/locks/lock-${it.workerId}")
-                it.tryAcquire(lockId) {}
+                val acquired = it.tryAcquire(lockId) {}
+                assertTrue(acquired)
 
                 println("After acquiring lock: \n" + zkTree())
                 assertTrue(nodeExists(lockId.nodePath))
@@ -73,7 +74,7 @@ internal class PersistentExpiringLockManagerTest : AbstractZookeeperTest() {
         assertEquals(locksCount, lockManagers.first().curatorFramework.children.forPath("$rootPath/locks").size)
 
         lockManagers.map {
-            GlobalScope.async(context = dispatcher) {
+            async(context = dispatcher) {
                 val lockId = LockIdentity("lock-${it.workerId}", "$rootPath/locks/lock-${it.workerId}")
                 it.release(lockId)
 
@@ -87,23 +88,19 @@ internal class PersistentExpiringLockManagerTest : AbstractZookeeperTest() {
 
     private fun executor(
             poolName: String,
-            profiler: Profiler = NoopProfiler(),
             poolSize: Int = 12
-    ) = NamedExecutors.newDynamicPool(
-            poolName,
-            DynamicProperty.of(poolSize),
-            profiler
-    )
+    ) = Executors.newFixedThreadPool(poolSize) {
+        Thread(it, poolName)
+    }
 
     private fun lockManager(
             workerId: String = "test-worker",
-            profiler: Profiler = NoopProfiler(),
-            executor: ExecutorService = executor("lock-executor", profiler)
-    ) = PersistentExpiringLockManager(
+            executor: ExecutorService = executor("lock-executor")
+    ) = LockManagerImpl(
             testingServer.createClient(),
             workerId,
             executor,
-            profiler
+            null
     )
 
     private fun nodeExists(path: String) = testingServer.client.checkExists().forPath(path) != null

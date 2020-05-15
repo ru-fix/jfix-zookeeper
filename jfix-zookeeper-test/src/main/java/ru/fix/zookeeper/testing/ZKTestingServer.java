@@ -55,9 +55,8 @@ public class ZKTestingServer implements AutoCloseable {
 
     /**
      * Register shutdown hook {@link Runtime#addShutdownHook(Thread)} and close on jvm exit.
-     * @param closeOnJvmShutdown
      */
-    public ZKTestingServer withCloseOnJvmShutdown(boolean closeOnJvmShutdown){
+    public ZKTestingServer withCloseOnJvmShutdown(boolean closeOnJvmShutdown) {
         this.closeOnJvmShutdown = closeOnJvmShutdown;
         return this;
     }
@@ -79,8 +78,8 @@ public class ZKTestingServer implements AutoCloseable {
             }
         }
 
-        if(closeOnJvmShutdown) {
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> close()));
+        if (closeOnJvmShutdown) {
+            Runtime.getRuntime().addShutdownHook(new Thread(this::close));
         }
     }
 
@@ -88,7 +87,7 @@ public class ZKTestingServer implements AutoCloseable {
      * Close server and remove temp directory
      */
     @Override
-    public void close(){
+    public void close() {
         try {
             zkServer.close();
         } catch (Exception e) {
@@ -101,7 +100,6 @@ public class ZKTestingServer implements AutoCloseable {
             log.error("Failed to delete {}", tmpDir, e);
         }
     }
-
 
 
     public ZKTestingServer start() throws Exception {

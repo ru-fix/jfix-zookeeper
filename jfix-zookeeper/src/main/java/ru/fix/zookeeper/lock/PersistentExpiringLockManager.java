@@ -3,16 +3,11 @@ package ru.fix.zookeeper.lock;
 import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.fix.aggregating.profiler.Profiler;
-import ru.fix.dynamic.property.api.DynamicProperty;
-import ru.fix.stdlib.concurrency.threads.NamedExecutors;
-import ru.fix.stdlib.concurrency.threads.ReschedulableScheduler;
-import ru.fix.stdlib.concurrency.threads.Schedule;
 
+import javax.annotation.Nullable;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.function.Consumer;
 
 /**
  * Acquires locks and releases them.
@@ -29,11 +24,11 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     public static final long DEFAULT_EXPIRATION_PERIOD_MS = TimeUnit.MINUTES.toMillis(6);
     public static final long DEFAULT_LOCK_PROLONGATION_INTERVAL_MS = TimeUnit.MINUTES.toMillis(3);
 
-    final CuratorFramework curatorFramework;
-    final String workerId;
-    final ExecutorService persistentLockExecutor;
-    final ReschedulableScheduler lockProlongationTask;
-    final Map<LockIdentity, LockContainer> locks = new ConcurrentHashMap<>();
+    protected final CuratorFramework curatorFramework;
+    protected final String workerId;
+    private final ExecutorService persistentLockExecutor;
+    private final Map<LockIdentity, LockContainer> locks = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService defaultScheduledExecutorService;
 
     private static class LockContainer {
         public final PersistentExpiringDistributedLock lock;
@@ -60,23 +55,33 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             CuratorFramework curatorFramework,
             String workerId,
             ExecutorService persistentLockExecutor,
-            Profiler profiler
+            @Nullable Consumer<Runnable> locksProlongationTaskConsumer
     ) {
-        lockProlongationTask = NamedExecutors.newSingleThreadScheduler("lock-prolongation", profiler);
         this.persistentLockExecutor = persistentLockExecutor;
         this.curatorFramework = curatorFramework;
         this.workerId = workerId;
 
-        this.lockProlongationTask.schedule(
-                DynamicProperty.of(Schedule.withDelay(DEFAULT_LOCK_PROLONGATION_INTERVAL_MS)),
-                0,
-                () -> locks.forEach((lockId, lockContainer) -> {
-                    if (!checkAndProlongIfAvailable(lockId, lockContainer.lock)) {
-                        log.info("Failed lock prolongation on wid={} for lockId={}", workerId, lockId.getId());
-                        lockContainer.prolongationListener.onLockProlongationFailed();
-                    }
-                })
-        );
+        Runnable locksProlongationTask = () -> locks.forEach((lockId, lockContainer) -> {
+            if (!checkAndProlongIfAvailable(lockId, lockContainer.lock)) {
+                log.info("Failed lock prolongation on wid={} for lockId={}", workerId, lockId.getId());
+                lockContainer.prolongationListener.onLockProlongationFailed();
+            }
+        });
+        if (locksProlongationTaskConsumer == null) {
+            // start default scheduled executor service for locks prolongation task
+            defaultScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(r ->
+                    new Thread(r, "lock-prolongation")
+            );
+            defaultScheduledExecutorService.scheduleWithFixedDelay(
+                    locksProlongationTask,
+                    0L,
+                    DEFAULT_LOCK_PROLONGATION_INTERVAL_MS,
+                    TimeUnit.MILLISECONDS
+            );
+        } else {
+            defaultScheduledExecutorService = null;
+            locksProlongationTaskConsumer.accept(locksProlongationTask);
+        }
     }
 
     public boolean tryAcquire(LockIdentity lockId, LockProlongationFailedListener listener) {
@@ -162,6 +167,10 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         });
         locks.clear();
         persistentLockExecutor.shutdown();
-        lockProlongationTask.shutdown();
+
+        ScheduledExecutorService service = this.defaultScheduledExecutorService;
+        if (service != null) {
+            service.shutdown();
+        }
     }
 }

@@ -11,7 +11,7 @@ import ru.fix.stdlib.concurrency.threads.NamedExecutors
 import ru.fix.zookeeper.AbstractZookeeperTest
 import java.util.concurrent.ExecutorService
 
-internal class LockManagerImplTest : AbstractZookeeperTest() {
+internal class PersistentExpiringLockManagerTest : AbstractZookeeperTest() {
     private lateinit var lockManager: LockManager
 
     @BeforeEach
@@ -99,7 +99,7 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
             workerId: String = "test-worker",
             profiler: Profiler = NoopProfiler(),
             executor: ExecutorService = executor("lock-executor", profiler)
-    ) = LockManagerImpl(
+    ) = PersistentExpiringLockManager(
             testingServer.createClient(),
             workerId,
             executor,

@@ -20,9 +20,9 @@ import java.util.concurrent.TimeUnit;
  *
  * @author Kamil Asfandiyarov
  */
-public class LockManagerImpl implements AutoCloseable, LockManager {
+public class PersistentExpiringLockManager implements AutoCloseable {
 
-    private static final Logger log = LoggerFactory.getLogger(LockManagerImpl.class);
+    private static final Logger log = LoggerFactory.getLogger(PersistentExpiringLockManager.class);
 
     public static final long DEFAULT_RESERVATION_PERIOD_MS = TimeUnit.MINUTES.toMillis(15);
     public static final long DEFAULT_ACQUIRING_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(10);
@@ -56,7 +56,7 @@ public class LockManagerImpl implements AutoCloseable, LockManager {
         }
     }
 
-    public LockManagerImpl(
+    public PersistentExpiringLockManager(
             CuratorFramework curatorFramework,
             String workerId,
             ExecutorService persistentLockExecutor,
@@ -79,7 +79,6 @@ public class LockManagerImpl implements AutoCloseable, LockManager {
         );
     }
 
-    @Override
     public boolean tryAcquire(LockIdentity lockId, LockProlongationFailedListener listener) {
         try {
             PersistentExpiringDistributedLock persistentLock = new PersistentExpiringDistributedLock(
@@ -114,12 +113,10 @@ public class LockManagerImpl implements AutoCloseable, LockManager {
         }
     }
 
-    @Override
-    public boolean existsLock(LockIdentity lockId) {
+    public boolean isLiveLockExist(LockIdentity lockId) {
         return locks.containsKey(lockId);
     }
 
-    @Override
     public void release(LockIdentity lockId) {
         LockContainer persistentLockContainer = this.locks.get(lockId);
         if (persistentLockContainer == null || persistentLockContainer.lock == null) {
@@ -127,11 +124,10 @@ public class LockManagerImpl implements AutoCloseable, LockManager {
             return;
         }
 
-        try {
-            persistentLockContainer.release();
+        if (persistentLockContainer.release()) {
             log.info("Worker with wid={} released lock with lockId={}", workerId, lockId.getId());
             locks.remove(lockId);
-        } finally {
+        } else {
             try {
                 persistentLockContainer.close();
             } catch (Exception e) {

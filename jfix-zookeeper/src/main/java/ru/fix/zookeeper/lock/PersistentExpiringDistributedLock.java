@@ -13,7 +13,6 @@ import javax.annotation.concurrent.NotThreadSafe;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ExecutorService;
 
 /**
  * Lock uses persistent zk nodes.
@@ -41,25 +40,20 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     private final Object internalLock = new Object();
 
     private final NodeCache nodeCache;
-    private final ExecutorService notificationsExecutor;
     private volatile long expirationDate;
     private final String serverId;
 
     /**
      * @param curatorFramework      CuratorFramework
-     * @param notificationsExecutor thread executor for notifying current lock instance
-     *                              about some event from zk node
      * @param lockId                unique identifier for this instance of lock
      * @param serverId              unique identifier for this application instance
      */
     public PersistentExpiringDistributedLock(
             CuratorFramework curatorFramework,
-            ExecutorService notificationsExecutor,
             LockIdentity lockId,
             String serverId
     ) throws Exception {
         this.curatorFramework = curatorFramework;
-        this.notificationsExecutor = notificationsExecutor;
         this.lockId = lockId;
         this.serverId = serverId;
         this.nodeCache = new NodeCache(curatorFramework, lockId.getNodePath());
@@ -69,10 +63,11 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     private void init() throws Exception {
         nodeCache.getListenable().addListener(() -> {
-            synchronized (internalLock) {
-                internalLock.notifyAll();
-            }
-        }, notificationsExecutor);
+                    synchronized (internalLock) {
+                        internalLock.notifyAll();
+                    }
+                }
+        );
         nodeCache.start();
     }
 

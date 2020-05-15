@@ -1,10 +1,7 @@
 package ru.fix.zookeeper.discovery
 
-import org.apache.curator.framework.CuratorFramework
-
 class MinFreeInstanceIdGenerator(
-        private val curatorFramework: CuratorFramework,
-        private val serviceRegistrationPath: String
+        private val maxCountOfInstanceIds: Int
 ) : InstanceIdGenerator {
 
     /**
@@ -15,9 +12,8 @@ class MinFreeInstanceIdGenerator(
      *    └ 5
      * @return  3 in this example, minimal free instance id
      */
-    override fun nextId(): String {
-        return curatorFramework.children
-                .forPath(serviceRegistrationPath)
+    override fun nextId(instanceIds: List<String>): String {
+        val newInstanceId = instanceIds
                 .mapTo(ArrayList()) { it.toInt() }
                 .apply {
                     sort()
@@ -25,8 +21,12 @@ class MinFreeInstanceIdGenerator(
                     if (id != acc) {
                         return acc.toString()
                     }
-
                     acc + 1
                 }.toString()
+        assert(newInstanceId.toInt() <= maxCountOfInstanceIds) {
+            "Generated instance id has value $newInstanceId," +
+                    " but should be in range 1..${maxCountOfInstanceIds}"
+        }
+        return newInstanceId
     }
 }

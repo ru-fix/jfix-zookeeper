@@ -12,7 +12,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 internal class LockManagerImplTest : AbstractZookeeperTest() {
-    private lateinit var lockManager: LockManager
+    private lateinit var lockManager: PersistentExpiringLockManager
 
     @BeforeEach
     fun setUpSecond() {
@@ -94,13 +94,10 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
     }
 
     private fun lockManager(
-            workerId: String = "test-worker",
-            executor: ExecutorService = executor("lock-executor")
-    ) = LockManagerImpl(
+            workerId: String = "test-worker"
+    ) = PersistentExpiringLockManager(
             testingServer.createClient(),
-            workerId,
-            executor,
-            null
+            workerId
     )
 
     private fun nodeExists(path: String) = testingServer.client.checkExists().forPath(path) != null

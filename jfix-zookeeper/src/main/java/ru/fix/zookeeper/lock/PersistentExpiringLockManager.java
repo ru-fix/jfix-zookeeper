@@ -4,10 +4,8 @@ import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.util.Map;
 import java.util.concurrent.*;
-import java.util.function.Consumer;
 
 /**
  * Acquires locks and releases them.
@@ -26,7 +24,6 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     protected final CuratorFramework curatorFramework;
     protected final String workerId;
-    private final ExecutorService persistentLockExecutor;
     private final Map<LockIdentity, LockContainer> locks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService defaultScheduledExecutorService;
 
@@ -53,42 +50,32 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     public PersistentExpiringLockManager(
             CuratorFramework curatorFramework,
-            String workerId,
-            ExecutorService persistentLockExecutor,
-            @Nullable Consumer<Runnable> locksProlongationTaskConsumer
+            String workerId
     ) {
-        this.persistentLockExecutor = persistentLockExecutor;
         this.curatorFramework = curatorFramework;
         this.workerId = workerId;
 
         Runnable locksProlongationTask = () -> locks.forEach((lockId, lockContainer) -> {
             if (!checkAndProlongIfAvailable(lockId, lockContainer.lock)) {
                 log.info("Failed lock prolongation on wid={} for lockId={}", workerId, lockId.getId());
-                lockContainer.prolongationListener.onLockProlongationFailed();
+                lockContainer.prolongationListener.onLockProlongationFailed(lockId);
             }
         });
-        if (locksProlongationTaskConsumer == null) {
-            // start default scheduled executor service for locks prolongation task
-            defaultScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(r ->
-                    new Thread(r, "lock-prolongation")
-            );
-            defaultScheduledExecutorService.scheduleWithFixedDelay(
-                    locksProlongationTask,
-                    0L,
-                    DEFAULT_LOCK_PROLONGATION_INTERVAL_MS,
-                    TimeUnit.MILLISECONDS
-            );
-        } else {
-            defaultScheduledExecutorService = null;
-            locksProlongationTaskConsumer.accept(locksProlongationTask);
-        }
+        defaultScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(r ->
+                new Thread(r, "lock-prolongation")
+        );
+        defaultScheduledExecutorService.scheduleWithFixedDelay(
+                locksProlongationTask,
+                0L,
+                DEFAULT_LOCK_PROLONGATION_INTERVAL_MS,
+                TimeUnit.MILLISECONDS
+        );
     }
 
     public boolean tryAcquire(LockIdentity lockId, LockProlongationFailedListener listener) {
         try {
             PersistentExpiringDistributedLock persistentLock = new PersistentExpiringDistributedLock(
                     curatorFramework,
-                    persistentLockExecutor,
                     lockId,
                     workerId
             );
@@ -157,8 +144,9 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     @Override
     public void close() {
         locks.forEach((lockId, lockContainer) -> {
-            if (lockId != null) {
+            if (lockId != null && lockContainer != null) {
                 try {
+                    log.warn("Active not released lock with lockId={} closed.", lockId);
                     lockContainer.lock.close();
                 } catch (Exception e) {
                     log.error("Failed to close lock with lockId={}", lockId, e);
@@ -166,7 +154,6 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             }
         });
         locks.clear();
-        persistentLockExecutor.shutdown();
 
         ScheduledExecutorService service = this.defaultScheduledExecutorService;
         if (service != null) {

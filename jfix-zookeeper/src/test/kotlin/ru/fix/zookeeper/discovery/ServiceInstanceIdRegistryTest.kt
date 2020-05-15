@@ -5,14 +5,15 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.apache.curator.framework.CuratorFramework
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import ru.fix.zookeeper.AbstractZookeeperTest
 import ru.fix.zookeeper.utils.Marshaller
 import java.util.*
 import java.util.concurrent.Executors
 
-internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
+internal class ServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
 
     @Test
     fun `sequential startup of 3 instances should generate id from 1 to 3`() {
@@ -31,14 +32,14 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
 
     @Test
     fun `instance id in zk should disappear when this instance closed the session`() {
-        val instance1 = createDiscovery("abs-rate")
+        val client = testingServer.createClient()
+        createDiscovery("abs-rate", client = client)
         createDiscovery("abs-rate")
         createDiscovery("drugkeeper")
 
         println(zkTree())
         assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
-
-        instance1.close()
+        client.close()
 
         println(zkTree())
         assertInstances(mapOf("abs-rate" to setOf("2"), "drugkeeper" to setOf("3")))
@@ -53,7 +54,7 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
 
         List(servicesCount) {
             async(context = dispatcher) {
-                createDiscovery(UUID.randomUUID().toString(), 20)
+                createDiscovery(UUID.randomUUID().toString(), 20, maxInstancesCount = 127)
             }
         }.awaitAll()
 
@@ -68,19 +69,16 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
 
     @Test
     fun `successful instance creation when registration path is already initialized`() {
-        testingServer.client.create()
-                .creatingParentsIfNeeded()
-                .forPath("$rootPath/services")
-        println(zkTree())
+        createDiscovery("abs-shake")
         createDiscovery("abs-rate")
 
         println(zkTree())
-        assertInstances(mapOf("abs-rate" to setOf("1")))
+        assertInstances(mapOf("abs-shake" to setOf("1"), "abs-rate" to setOf("2")))
     }
 
 
     @Test
-    fun `instance id should be in range from 1 to 127, error thrown otherwise`() {
+    fun `instance id should be in range from 1 to 10, error thrown otherwise`() {
         val maxAvailableId = 10
         repeat(maxAvailableId) {
             createDiscovery(UUID.randomUUID().toString(), 20, testingServer.client, maxAvailableId)
@@ -100,18 +98,20 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
     }
 
     private fun assertInstances(services: Map<String, Set<String>>) {
-        val client = testingServer.client
-        services.forEach { (service, instances) ->
-            instances.forEach { instanceId ->
-                val instancePath = "$rootPath/services/$instanceId"
-                assertNotNull(client.checkExists().forPath(instancePath))
-                val instanceIdDataInZkNode = Marshaller.unmarshall(
-                        client.data.forPath(instancePath).toString(Charsets.UTF_8),
-                        InstanceIdData::class.java
-                )
-                assertEquals(service, instanceIdDataInZkNode.applicationName)
-            }
+        val expected = services.flatMap {
+            service -> service.value.map { service.key to it }
         }
+        val actual = testingServer.client.children
+                .forPath("$rootPath/services")
+                .map {
+                    val instancePath = "$rootPath/services/$it"
+                    val serviceName = Marshaller.unmarshall(
+                            testingServer.client.data.forPath(instancePath).toString(Charsets.UTF_8),
+                            InstanceIdData::class.java
+                    ).applicationName
+                    serviceName to it
+                }
+        assertEquals(expected, actual)
     }
 
     private fun createDiscovery(
@@ -119,10 +119,9 @@ internal class ServiceDiscoveryTest : AbstractZookeeperTest() {
             registrationRetryCount: Int = 5,
             client: CuratorFramework = testingServer.createClient(),
             maxInstancesCount: Int = Int.MAX_VALUE
-    ) = ServiceDiscovery(
+    ) = ServiceInstanceIdRegistry(
             curatorFramework = client,
-            instanceIdGenerator = MinFreeInstanceIdGenerator(testingServer.client, "$rootPath/services"),
-            config = ServiceDiscoveryConfig(rootPath, appName, registrationRetryCount),
-            maxInstancesCount = maxInstancesCount
+            instanceIdGenerator = MinFreeInstanceIdGenerator(maxInstancesCount),
+            config = ServiceInstanceIdRegistryConfig(rootPath, appName, registrationRetryCount, maxInstancesCount)
     )
 }

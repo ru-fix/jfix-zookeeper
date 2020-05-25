@@ -15,5 +15,9 @@ dependencies {
     testImplementation(Libs.junit_jupiter_engine)
     testImplementation(Libs.junit_jupiter_api)
     testImplementation(Libs.junit_jupiter_params)
+    testImplementation(Libs.jfix_stdlib_socket)
+    testImplementation(Libs.awaitility)
+    testImplementation(Libs.apache_curator_test)
+    testImplementation(Libs.netcrusher)
     testImplementation(project(":jfix-zookeeper-test"))
 }

@@ -16,6 +16,8 @@ object Vers {
     const val slf4j = "1.7.30"
     const val log4j = "2.13.2"
     const val jfix_stdlib = "3.0.0"
+    const val awaitility = "4.0.2"
+    const val netcrusher = "0.10"
 }
 
 object Libs {
@@ -45,4 +47,6 @@ object Libs {
     const val junit_jupiter_engine = "org.junit.jupiter:junit-jupiter-engine:${Vers.junit_jupiter}"
     const val junit_jupiter_api = "org.junit.jupiter:junit-jupiter-api:${Vers.junit_jupiter}"
     const val junit_jupiter_params = "org.junit.jupiter:junit-jupiter-params:${Vers.junit_jupiter}"
+    const val awaitility = "org.awaitility:awaitility:${Vers.awaitility}"
+    const val netcrusher = "com.github.netcrusherorg:netcrusher-core:${Vers.netcrusher}"
 }

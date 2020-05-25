@@ -97,7 +97,8 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
             workerId: String = "test-worker"
     ) = PersistentExpiringLockManager(
             testingServer.createClient(),
-            workerId
+            workerId,
+            PersistentExpiringLockManagerConfig()
     )
 
     private fun nodeExists(path: String) = testingServer.client.checkExists().forPath(path) != null

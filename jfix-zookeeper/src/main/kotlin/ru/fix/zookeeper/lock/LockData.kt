@@ -1,13 +1,17 @@
 package ru.fix.zookeeper.lock
 
+import com.fasterxml.jackson.annotation.JsonFormat
 import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.net.UnknownHostException
+import java.time.Instant
 
 data class LockData(
         val uuid: String,
-        val expirationDate: Long,
-        val serverId: String
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
+        val expirationDate: Instant,
+        val serverId: String,
+        val data: String? = null
 ) {
     var ip: String = "Unknown ip"
         private set
@@ -33,7 +37,7 @@ data class LockData(
             hostname: String,
             serverId: String,
             uuid: String,
-            expirationDate: Long
+            expirationDate: Instant
     ) : this(uuid, expirationDate, serverId) {
         this.ip = ip
         this.hostname = hostname

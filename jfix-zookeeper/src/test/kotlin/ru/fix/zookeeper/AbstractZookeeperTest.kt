@@ -1,5 +1,6 @@
 package ru.fix.zookeeper
 
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
@@ -13,9 +14,15 @@ abstract class AbstractZookeeperTest {
 
     @BeforeEach
     open fun setUp() {
+        System.setProperty("zookeeper.extendedTypesEnabled", "true")
         testingServer = ZKTestingServer()
                 .withCloseOnJvmShutdown(true)
                 .start()
+    }
+
+    @AfterEach
+    open fun tearDown() {
+        testingServer.close()
     }
 
     protected fun zkTree(): String = ZkTreePrinter(testingServer.client).print(rootPath, true)

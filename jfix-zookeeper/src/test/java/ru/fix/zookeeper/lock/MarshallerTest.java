@@ -1,5 +1,6 @@
 package ru.fix.zookeeper.lock;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import kotlin.text.Charsets;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -11,6 +12,8 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -23,7 +26,8 @@ public class MarshallerTest {
             "example.org",
             "2336799_DOMAIN_COM-VRSN",
             "1cf7407a-9f15-11e9-a2a3-2a2ae2dbcce4",
-            1562324887282L);
+            Instant.now()
+    );
 
     @Test
     public void marshallLockData() throws IOException {
@@ -35,7 +39,7 @@ public class MarshallerTest {
     @Test
     public void unmarshallLockData() throws IOException {
         String json = getJsonFromResource("lockData.json");
-        LockData lockData = Marshaller.unmarshall(json, LockData.class);
+        LockData lockData = Marshaller.unmarshall(json, new TypeReference<>() {});
         assertNotNull(lockData);
         assertEquals(lockData, this.lockData);
         logger.trace("Unmarshalling successfull.\n{}", lockData);

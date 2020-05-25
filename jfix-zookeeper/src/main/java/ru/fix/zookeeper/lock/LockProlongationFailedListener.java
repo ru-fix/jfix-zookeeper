@@ -1,6 +1,6 @@
 package ru.fix.zookeeper.lock;
 
 @FunctionalInterface
-interface LockProlongationFailedListener {
+public interface LockProlongationFailedListener {
     void onLockProlongationFailed(LockIdentity lockIdentity);
 }

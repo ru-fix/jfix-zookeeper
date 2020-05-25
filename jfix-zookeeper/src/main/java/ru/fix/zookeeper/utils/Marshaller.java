@@ -2,8 +2,10 @@ package ru.fix.zookeeper.utils;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.kotlin.KotlinModule;
 import org.slf4j.Logger;
@@ -18,6 +20,7 @@ public class Marshaller {
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
             .registerModule(new KotlinModule())
             .registerModule(new JavaTimeModule())
+            .enable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY);
 
     public static String marshall(Object serializedObject) throws JsonProcessingException {
@@ -29,7 +32,7 @@ public class Marshaller {
         }
     }
 
-    public static <T> T unmarshall(String json, Class<T> targetType) throws IOException {
+    public static <T> T unmarshall(String json, TypeReference<T> targetType) throws IOException {
         try {
             return mapper.readValue(json, targetType);
         } catch (IOException ex) {

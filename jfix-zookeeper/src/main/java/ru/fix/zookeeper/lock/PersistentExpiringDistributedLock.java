@@ -1,10 +1,12 @@
 package ru.fix.zookeeper.lock;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.cache.NodeCache;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.data.Stat;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.fix.zookeeper.utils.Marshaller;
@@ -13,18 +15,20 @@ import javax.annotation.concurrent.NotThreadSafe;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * Lock uses persistent zk nodes.
  * After lock was acquired it will be active for given TTL
- * Owner should renew lock expiration time using {@link #expirableAcquire(long, long)}
+ * Owner should renew lock expiration time using {@link #expirableAcquire(Duration, Duration)}
  * <p>
  * WARNING! This class is not thread safe and should be used as distributed lock between different JVM's only.
  * <p>
- * WARNING!  Use {@link #checkAndProlongIfExpiresIn(long, long)} as much as possible
- * instead of {@link #checkAndProlong(long)} due to performance issue.
- * {@link #checkAndProlongIfExpiresIn(long, long)} - cheap operation.
- * {@link #checkAndProlong(long)} - heavy operation.
+ * WARNING!  Use {@link #checkAndProlongIfExpiresIn(Duration, Duration)} as much as possible
+ * instead of {@link #checkAndProlong(Duration)} due to performance issue.
+ * {@link #checkAndProlongIfExpiresIn(Duration, Duration)} - cheap operation.
+ * {@link #checkAndProlong(Duration)} - heavy operation.
  *
  * @author Kamil Asfandiyarov
  */
@@ -40,13 +44,13 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     private final Object internalLock = new Object();
 
     private final NodeCache nodeCache;
-    private volatile long expirationDate;
+    private volatile Instant expirationDate;
     private final String serverId;
 
     /**
-     * @param curatorFramework      CuratorFramework
-     * @param lockId                unique identifier for this instance of lock
-     * @param serverId              unique identifier for this application instance
+     * @param curatorFramework CuratorFramework
+     * @param lockId           unique identifier for this instance of lock
+     * @param serverId         unique identifier for this application instance
      */
     public PersistentExpiringDistributedLock(
             CuratorFramework curatorFramework,
@@ -72,38 +76,46 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     }
 
     /**
-     * Acquire the lock. Blocks until lock will be acquired, or the given timeout expires.
+     * Acquire the lock. Blocks until lock will be acquired, or the given acquiringTimeout expires.
      * Note: renews acquired period if current instance already holds the lock.
      *
-     * @param acquirePeriod time in millis for which current instance acquire the
-     *                      lock (lock could be released with {@link #release()} method
-     *                      or automatically when acquirePeriod expire)
-     * @param timeout       max amount of time in millis which could be spend to try acquire the lock
+     * @param acquirePeriod    time in millis for which current instance acquire the
+     *                         lock (lock could be released with {@link #release()} method
+     *                         or automatically when acquirePeriod expire)
+     * @param acquiringTimeout max amount of time in millis which could be spend to try acquire the lock
      * @return true if the lock was acquired, false if not
      * @throws Exception ZK errors, connection interruptions
      */
-    public boolean expirableAcquire(long acquirePeriod, final long timeout) throws Exception {
-        final long startTime = System.currentTimeMillis();
+    public boolean expirableAcquire(
+            @NotNull Duration acquirePeriod,
+            @NotNull Duration acquiringTimeout
+    ) throws Exception {
+        final Instant startTime = Instant.now();
 
         synchronized (internalLock) {
 
-            while (true) { /** main loop */
+            while (true) { /* main loop */
 
-                /**
+                /*
                  * read lock data
                  */
                 Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
 
-                /**
+                /*
                  * check if node path exist
                  */
                 if (nodeStat == null) {
-                    /**
+                    /*
                      * lock node does not exist
                      */
                     try {
-                        expirationDate = System.currentTimeMillis() + acquirePeriod;
-                        LockData lockData = new LockData(lockId.getId(), expirationDate, serverId);
+                        expirationDate = Instant.now().plus(acquirePeriod);
+                        LockData lockData = new LockData(
+                                lockId.getId(),
+                                expirationDate,
+                                serverId,
+                                lockId.getData()
+                        );
                         curatorFramework.create()
                                 .creatingParentContainersIfNeeded()
                                 .forPath(lockId.getNodePath(), encodeLockData(lockData));
@@ -112,12 +124,12 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                         logger.trace("Node already exist", nodeExistExc);
                     }
 
-                    /**
+                    /*
                      * if node already exist then continue with main loop
                      */
 
                 } else {
-                    /**
+                    /*
                      * lock node exist
                      */
                     LockData lockData;
@@ -128,41 +140,41 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                         return false;
                     }
 
-                    if (lockData.getExpirationDate() < System.currentTimeMillis()) {
-                        /**
+                    if (lockData.getExpirationDate().toEpochMilli() < System.currentTimeMillis()) {
+                        /*
                          * lock expired
                          */
                         if (zkTxUpdateLockData(acquirePeriod, nodeStat)) {
                             return true;
                         }
 
-                        /** tx failed, continue with main loop*/
+                        /* tx failed, continue with main loop*/
 
                     } else {
-                        /**
+                        /*
                          * lock active
                          */
-                        if (lockId.equals(lockData.getUuid())) {
-                            /**
+                        if (lockId.getId().equals(lockData.getUuid())) {
+                            /*
                              * we last lock owner
                              */
                             if (zkTxUpdateLockData(acquirePeriod, nodeStat)) {
                                 return true;
                             }
 
-                            /** tx failed, continue with main loop */
+                            /* tx failed, continue with main loop */
 
                         } else {
-                            /**
+                            /*
                              * we are not last lock owner
                              */
 
 
-                            /** lock expired after */
-                            long lockTTL = Math.max(0, lockData.getExpirationDate() - System.currentTimeMillis());
+                            /* lock expired after */
+                            long lockTTL = Math.max(0, lockData.getExpirationDate().toEpochMilli() - Instant.now().toEpochMilli());
 
-                            /** acquiring try time expired after*/
-                            long acquiringTryTTL = Math.max(0, startTime + timeout - System.currentTimeMillis());
+                            /* acquiring try time expired after */
+                            long acquiringTryTTL = Math.max(0, startTime.toEpochMilli() + acquiringTimeout.toMillis() - Instant.now().toEpochMilli());
 
                             long waitTime = Math.min(lockTTL, acquiringTryTTL);
 
@@ -182,16 +194,16 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                                         "is {}. Lock path: {}", lockId, logWaitingTime, waitTime, lockId.getNodePath());
                             }
 
-                            /** continue with main loop */
+                            /* continue with main loop */
 
                         }
                     }
                 }
 
-                final long actualAcquiringTime = System.currentTimeMillis() - startTime;
-                /** check if acquiring try time expired */
-                if (actualAcquiringTime > timeout) {
-                    logger.trace("Couldn't acquire lock for '{}' ms. Acquiring timeout was expired. Lock path: {}, " +
+                final Duration actualAcquiringTime = Duration.between(startTime, Instant.now());
+                /* check if acquiring try time expired */
+                if (actualAcquiringTime.compareTo(acquiringTimeout) > 0) {
+                    logger.trace("Couldn't acquire lock for '{}' ms. Acquiring acquiringTimeout was expired. Lock path: {}, " +
                             "lock id: {}", actualAcquiringTime, lockId.getNodePath(), lockId);
                     return false;
                 }
@@ -201,15 +213,21 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     }
 
     /**
-     * @param acquirePeriod
-     * @param nodeStat
+     * @param acquirePeriod time to hold lock
+     * @param nodeStat lock's node stat
      * @return true if lock updated in transaction successfully
-     * @throws Exception
+     * @throws Exception when zk perform
      */
-    private boolean zkTxUpdateLockData(long acquirePeriod, Stat nodeStat) throws Exception {
+    @SuppressWarnings("deprecation")
+    private boolean zkTxUpdateLockData(Duration acquirePeriod, Stat nodeStat) throws Exception {
         try {
-            long nextExpirationDate = System.currentTimeMillis() + acquirePeriod;
-            LockData lockData = new LockData(lockId.getId(), nextExpirationDate, serverId);
+            Instant nextExpirationDate = Instant.now().plus(acquirePeriod);
+            LockData lockData = new LockData(
+                    lockId.getId(),
+                    nextExpirationDate,
+                    serverId,
+                    lockId.getData()
+            );
             curatorFramework.inTransaction()
                     .check().withVersion(nodeStat.getVersion()).forPath(lockId.getNodePath()).and()
                     .setData().forPath(lockId.getNodePath(), encodeLockData(lockData)).and().commit();
@@ -224,17 +242,17 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     /**
      * Check that caller still owns the lock and prolongs lock expiration time if so.
      * <p>
-     * WARNING! Use {@link #checkAndProlongIfExpiresIn(long, long)} as much as possible
-     * instead of {@link #checkAndProlong(long)} due to performance issue.
-     * {@link #checkAndProlongIfExpiresIn(long, long)} - cheap operation.
-     * {@link #checkAndProlong(long)} - heavy operation.
+     * WARNING! Use {@link #checkAndProlongIfExpiresIn(Duration, Duration)} as much as possible
+     * instead of {@link #checkAndProlong(Duration)} due to performance issue.
+     * {@link #checkAndProlongIfExpiresIn(Duration, Duration)} - cheap operation.
+     * {@link #checkAndProlong(Duration)} - heavy operation.
      *
      * @param prolongationPeriod time in millis which current instance will hold the lock until auto-expiration
      * @return {@code true} if current thread owns the lock and prolongation was performed,
      * {@code false} if current instance doesn't owns the lock
      * @throws Exception ZK errors, connection interruptions
      */
-    public boolean checkAndProlong(long prolongationPeriod) throws Exception {
+    public boolean checkAndProlong(Duration prolongationPeriod) throws Exception {
         Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
@@ -255,6 +273,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      * @return false in case ZK errors, connection interruptions and other conditions when it is hard to clarify
      * result of operation
      */
+    @SuppressWarnings("deprecation")
     public boolean release() {
         try {
             synchronized (internalLock) {
@@ -283,7 +302,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                                     lockId.getNodePath(), serverId, e
                             );
                         } finally {
-                            expirationDate = 0;
+                            expirationDate = Instant.ofEpochMilli(0);
                         }
                     }
                 }
@@ -303,7 +322,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     }
 
     private LockData decodeLockData(byte[] content) throws IOException {
-        return Marshaller.unmarshall(new String(content, charset), LockData.class);
+        return Marshaller.unmarshall(new String(content, charset), new TypeReference<>() {});
     }
 
     @Override
@@ -319,7 +338,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      * PersistentLock always keeps timestamp than indicates end of life.
      * After this timestamp lock is expired.
      * This method works only on owned locks.
-     * You can call this method only after acquiring lock by {@link #expirableAcquire(long, long)}
+     * You can call this method only after acquiring lock by {@link #expirableAcquire(Duration, Duration)}
      * <p>
      * If lock expires after expirationPeriod ms this method does not do anything.
      * If lock expires in less than expirationPeriod ms, then this method update increase expiration timestamp.
@@ -334,8 +353,11 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      * @return true if current instance owns the lock, false otherwise
      * @throws Exception zk errors, connection interruptions
      */
-    public boolean checkAndProlongIfExpiresIn(long prolongationPeriod, long expirationPeriod) throws Exception {
-        if (expirationDate < System.currentTimeMillis() + expirationPeriod) {
+    public boolean checkAndProlongIfExpiresIn(
+            Duration prolongationPeriod,
+            Duration expirationPeriod
+    ) throws Exception {
+        if (expirationDate.isBefore(Instant.now().plus(expirationPeriod))) {
             return checkAndProlong(prolongationPeriod);
         } else {
             return true;

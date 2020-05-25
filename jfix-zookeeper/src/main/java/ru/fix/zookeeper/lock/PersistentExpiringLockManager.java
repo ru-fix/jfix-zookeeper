@@ -4,8 +4,12 @@ import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Acquires locks and releases them.
@@ -17,13 +21,9 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(PersistentExpiringLockManager.class);
 
-    public static final long DEFAULT_RESERVATION_PERIOD_MS = TimeUnit.MINUTES.toMillis(15);
-    public static final long DEFAULT_ACQUIRING_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(10);
-    public static final long DEFAULT_EXPIRATION_PERIOD_MS = TimeUnit.MINUTES.toMillis(6);
-    public static final long DEFAULT_LOCK_PROLONGATION_INTERVAL_MS = TimeUnit.MINUTES.toMillis(3);
-
     protected final CuratorFramework curatorFramework;
     protected final String workerId;
+    protected final PersistentExpiringLockManagerConfig config;
     private final Map<LockIdentity, LockContainer> locks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService defaultScheduledExecutorService;
 
@@ -50,10 +50,12 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     public PersistentExpiringLockManager(
             CuratorFramework curatorFramework,
-            String workerId
+            String workerId,
+            PersistentExpiringLockManagerConfig config
     ) {
         this.curatorFramework = curatorFramework;
         this.workerId = workerId;
+        this.config = config;
 
         Runnable locksProlongationTask = () -> locks.forEach((lockId, lockContainer) -> {
             if (!checkAndProlongIfAvailable(lockId, lockContainer.lock)) {
@@ -67,7 +69,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         defaultScheduledExecutorService.scheduleWithFixedDelay(
                 locksProlongationTask,
                 0L,
-                DEFAULT_LOCK_PROLONGATION_INTERVAL_MS,
+                config.getLockProlongationInterval().toMillis(),
                 TimeUnit.MILLISECONDS
         );
     }
@@ -79,9 +81,11 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                     lockId,
                     workerId
             );
-            if (!persistentLock.expirableAcquire(DEFAULT_RESERVATION_PERIOD_MS, DEFAULT_ACQUIRING_TIMEOUT_MS)) {
+            Duration reservationPeriod = config.getReservationPeriod();
+            Duration acquiringTimeout = config.getAcquiringTimeout();
+            if (!persistentLock.expirableAcquire(reservationPeriod, acquiringTimeout)) {
                 log.debug("Failed to acquire expirable lock. Acquire period: {}, timeout: {}, lock path: {}",
-                        DEFAULT_RESERVATION_PERIOD_MS, DEFAULT_ACQUIRING_TIMEOUT_MS, lockId.getNodePath());
+                        reservationPeriod.toMillis(), acquiringTimeout.toMillis(), lockId.getNodePath());
                 persistentLock.close();
                 return false;
             }
@@ -128,13 +132,13 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         }
     }
 
-    private static boolean checkAndProlongIfAvailable(
+    private boolean checkAndProlongIfAvailable(
             LockIdentity lockId,
             PersistentExpiringDistributedLock lock
     ) {
         try {
             log.info("Method checkAndProlong lockId={}", lockId.getId());
-            return lock.checkAndProlongIfExpiresIn(DEFAULT_RESERVATION_PERIOD_MS, DEFAULT_EXPIRATION_PERIOD_MS);
+            return lock.checkAndProlongIfExpiresIn(config.getReservationPeriod(), config.getExpirationPeriod());
         } catch (Exception e) {
             log.error("Failed to checkAndProlong persistent locks with lockId {}", lockId.getId(), e);
             return false;

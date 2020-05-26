@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class PersistentExpiringLockManager implements AutoCloseable {
 
-    private static final Logger log = LoggerFactory.getLogger(PersistentExpiringLockManager.class);
+    private static final Logger logger = LoggerFactory.getLogger(PersistentExpiringLockManager.class);
 
     protected final CuratorFramework curatorFramework;
     protected final PersistentExpiringLockManagerConfig config;
@@ -57,7 +57,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
         Runnable locksProlongationTask = () -> locks.forEach((lockId, lockContainer) -> {
             if (!checkAndProlongIfAvailable(lockId, lockContainer.lock)) {
-                log.info("Failed lock prolongation for lockId={}", Marshaller.marshall(lockId));
+                logger.info("Failed lock prolongation for lockId={}", Marshaller.marshall(lockId));
                 lockContainer.prolongationListener.onLockProlongationFailed(lockId);
             }
         });
@@ -81,7 +81,8 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             Duration reservationPeriod = config.getReservationPeriod();
             Duration acquiringTimeout = config.getAcquiringTimeout();
             if (!persistentLock.expirableAcquire(reservationPeriod, acquiringTimeout)) {
-                log.warn("Failed to acquire expirable lock. Acquire period: {}, timeout: {}, lockId: {}",
+                logger.debug(
+                        "Failed to acquire expirable lock. Acquire period: {}, timeout: {}, lockId: {}",
                         reservationPeriod, acquiringTimeout, Marshaller.marshall(lockId)
                 );
                 persistentLock.close();
@@ -89,8 +90,9 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             }
 
             LockContainer oldLock = locks.put(lockId, new LockContainer(persistentLock, listener));
+            String marshalledLock = Marshaller.marshall(lockId);
             if (oldLock != null) {
-                log.error("Illegal state of locking for lockId={}. Lock already acquired.", Marshaller.marshall(lockId));
+                logger.error("Illegal state of locking for lockId={}. Lock already acquired.", marshalledLock);
 
                 locks.remove(lockId);
 
@@ -98,11 +100,14 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 persistentLock.close();
                 return false;
             }
-            log.info("Lock with lockId={} with successfully acquired", Marshaller.marshall(lockId));
+            logger.info("Lock with lockId={} with successfully acquired", marshalledLock);
             return true;
 
         } catch (Exception e) {
-            log.error("Failed to create PersistentExpiringDistributedLock with lockId={}", Marshaller.marshall(lockId), e);
+            logger.error(
+                    "Failed to create PersistentExpiringDistributedLock with lockId={}",
+                    Marshaller.marshall(lockId), e
+            );
             return false;
         }
     }
@@ -114,18 +119,18 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     public void release(LockIdentity lockId) {
         LockContainer persistentLockContainer = this.locks.get(lockId);
         if (persistentLockContainer == null || persistentLockContainer.lock == null) {
-            log.error("Illegal state. Persistent lock for lockId={} doesn't exist.", Marshaller.marshall(lockId));
+            logger.error("Illegal state. Persistent lock for lockId={} doesn't exist.", Marshaller.marshall(lockId));
             return;
         }
 
         if (persistentLockContainer.release()) {
-            log.info("Released lock with lockId={}", Marshaller.marshall(lockId));
+            logger.info("Released lock with lockId={}", Marshaller.marshall(lockId));
             locks.remove(lockId);
         } else {
             try {
                 persistentLockContainer.close();
             } catch (Exception e) {
-                log.error("Error during closing lock with lockId={}", Marshaller.marshall(lockId), e);
+                logger.error("Error during closing lock with lockId={}", Marshaller.marshall(lockId), e);
             }
         }
     }
@@ -135,10 +140,10 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             PersistentExpiringDistributedLock lock
     ) {
         try {
-            log.info("Method checkAndProlong lockId={}", lockId.getId());
+            logger.info("Method checkAndProlong lockId={}", lockId.getId());
             return lock.checkAndProlongIfExpiresIn(config.getReservationPeriod(), config.getExpirationPeriod());
         } catch (Exception e) {
-            log.error("Failed to checkAndProlong persistent locks with lockId {}", Marshaller.marshall(lockId), e);
+            logger.error("Failed to checkAndProlong persistent locks with lockId {}", Marshaller.marshall(lockId), e);
             return false;
         }
     }
@@ -148,10 +153,10 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         locks.forEach((lockId, lockContainer) -> {
             if (lockId != null && lockContainer != null) {
                 try {
-                    log.warn("Active not released lock with lockId={} closed.", Marshaller.marshall(lockId));
+                    logger.warn("Active not released lock with lockId={} closed.", Marshaller.marshall(lockId));
                     lockContainer.lock.close();
                 } catch (Exception e) {
-                    log.error("Failed to close lock with lockId={}", Marshaller.marshall(lockId), e);
+                    logger.error("Failed to close lock with lockId={}", Marshaller.marshall(lockId), e);
                 }
             }
         });

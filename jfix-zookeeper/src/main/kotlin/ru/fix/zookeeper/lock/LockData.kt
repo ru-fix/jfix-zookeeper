@@ -7,7 +7,7 @@ import java.net.UnknownHostException
 import java.time.Instant
 
 data class LockData(
-        val ownerUuid: String,
+        val version: String,
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
         val expirationDate: Instant,
         val data: String? = null
@@ -27,7 +27,7 @@ data class LockData(
             ip = inetAddress.hostAddress
             hostname = inetAddress.hostName
         } catch (e: UnknownHostException) {
-            logger.trace("Host is invalid when lock data instantiated", e)
+            logger.debug("Host is invalid when lock data instantiated", e)
         }
     }
 

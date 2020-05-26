@@ -43,7 +43,7 @@ class ServiceInstanceIdRegistry(
                     reservationPeriod = config.disconnectTimeout.dividedBy(2),
                     expirationPeriod = config.disconnectTimeout.dividedBy(3),
                     lockProlongationInterval = config.disconnectTimeout.dividedBy(4),
-                    acquiringTimeout = Duration.ofSeconds(2)
+                    acquiringTimeout = Duration.ofSeconds(1)
             )
     )
 
@@ -89,7 +89,7 @@ class ServiceInstanceIdRegistry(
             val lockIdentity = LockIdentity(preparedInstanceId, instanceIdPath, Marshaller.marshall(instanceIdData))
 
             val result = lockManager.tryAcquire(lockIdentity) { lock ->
-                logger.warn("Failed to initialize service id registry and generate instance id. " +
+                logger.error("Failed to initialize service id registry and generate instance id. " +
                         "Lock id: ${Marshaller.marshall(lock)}. " +
                         "Current registration node state: " +
                         ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
@@ -171,7 +171,12 @@ class ServiceInstanceIdRegistry(
     }
 
     override fun close() {
-        lockManager.release(lockIdentity)
-        lockManager.close()
+        try {
+            lockManager.release(lockIdentity)
+            lockManager.close()
+            logger.info("Instance id registry with instanceId=$instanceId closed successfully")
+        } catch (e: Exception) {
+            logger.error("Error during instance id registry with instanceId=$instanceId close ", e)
+        }
     }
 }

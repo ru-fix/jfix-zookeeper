@@ -42,7 +42,7 @@ import static org.slf4j.LoggerFactory.getLogger;
  */
 public class ZKTestingServer implements AutoCloseable {
 
-    private static final Logger log = getLogger(ZKTestingServer.class);
+    private static final Logger logger = getLogger(ZKTestingServer.class);
 
     private TestingServer zkServer;
     private Path tmpDir;
@@ -74,7 +74,7 @@ public class ZKTestingServer implements AutoCloseable {
                 zkServer = new TestingServer(instanceSpec, true);
                 break;
             } catch (Exception e) {
-                log.debug("Failed to create zk testing server", e);
+                logger.debug("Failed to create zk testing server", e);
             }
         }
 
@@ -91,13 +91,13 @@ public class ZKTestingServer implements AutoCloseable {
         try {
             zkServer.close();
         } catch (Exception e) {
-            log.error("Failed to close zk testing server", e);
+            logger.error("Failed to close zk testing server", e);
         }
 
         try {
             Files.deleteIfExists(tmpDir);
         } catch (Exception e) {
-            log.error("Failed to delete {}", tmpDir, e);
+            logger.error("Failed to delete {}", tmpDir, e);
         }
     }
 

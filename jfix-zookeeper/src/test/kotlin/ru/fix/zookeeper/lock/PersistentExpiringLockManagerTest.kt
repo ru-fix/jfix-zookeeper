@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import ru.fix.zookeeper.AbstractZookeeperTest
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 internal class LockManagerImplTest : AbstractZookeeperTest() {
@@ -55,14 +54,12 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
         val dispatcher = executor("lock-manager-launcher").asCoroutineDispatcher()
 
         val lockManagers = (1..locksCount).map {
-            async(context = dispatcher) {
-                lockManager("worker-$it")
-            }
+            async(context = dispatcher) { lockManager() }
         }.awaitAll()
 
-        lockManagers.map {
+        lockManagers.mapIndexed { i, it ->
             async(context = dispatcher) {
-                val lockId = LockIdentity("lock-${it.workerId}", "$rootPath/locks/lock-${it.workerId}")
+                val lockId = LockIdentity("lock-$i", "$rootPath/locks/lock-$i")
                 val acquired = it.tryAcquire(lockId) {}
                 assertTrue(acquired)
 
@@ -73,9 +70,9 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
 
         assertEquals(locksCount, lockManagers.first().curatorFramework.children.forPath("$rootPath/locks").size)
 
-        lockManagers.map {
+        lockManagers.mapIndexed { i, it ->
             async(context = dispatcher) {
-                val lockId = LockIdentity("lock-${it.workerId}", "$rootPath/locks/lock-${it.workerId}")
+                val lockId = LockIdentity("lock-$i", "$rootPath/locks/lock-$i")
                 it.release(lockId)
 
                 println("After releasing lock: \n" + zkTree())
@@ -93,11 +90,8 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
         Thread(it, poolName)
     }
 
-    private fun lockManager(
-            workerId: String = "test-worker"
-    ) = PersistentExpiringLockManager(
+    private fun lockManager() = PersistentExpiringLockManager(
             testingServer.createClient(),
-            workerId,
             PersistentExpiringLockManagerConfig()
     )
 

@@ -10,7 +10,6 @@ data class LockData(
         val uuid: String,
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
         val expirationDate: Instant,
-        val serverId: String,
         val data: String? = null
 ) {
     var ip: String = "Unknown ip"
@@ -28,17 +27,16 @@ data class LockData(
             ip = inetAddress.hostAddress
             hostname = inetAddress.hostName
         } catch (e: UnknownHostException) {
-            logger.trace("Node[serverId={}, uuid={}] already removed on release.", serverId, uuid, e)
+            logger.trace("Host is invalid when lock data instantiated. Hostname={},", uuid, e)
         }
     }
 
     constructor(
             ip: String,
             hostname: String,
-            serverId: String,
             uuid: String,
             expirationDate: Instant
-    ) : this(uuid, expirationDate, serverId) {
+    ) : this(uuid, expirationDate) {
         this.ip = ip
         this.hostname = hostname
     }

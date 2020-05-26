@@ -42,7 +42,7 @@ class ServiceInstanceIdRegistry(
     }
 
     private val lockManager: PersistentExpiringLockManager = PersistentExpiringLockManager(
-            curatorFramework, "1", PersistentExpiringLockManagerConfig()
+            curatorFramework, PersistentExpiringLockManagerConfig()
     )
 
     init {

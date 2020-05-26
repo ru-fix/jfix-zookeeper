@@ -7,6 +7,7 @@ import ru.fix.zookeeper.AbstractZookeeperTest
 import ru.fix.zookeeper.lock.LockData
 import ru.fix.zookeeper.utils.Marshaller
 import java.time.Duration
+import java.time.Instant
 import java.util.*
 import kotlin.random.Random
 
@@ -34,9 +35,27 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
         Assertions.assertEquals(expected, actual)
     }
 
+    protected fun isInstanceIdLockExpired(instanceId: String, disconnectTimeout: Duration): Boolean {
+        val instancePath = "$rootPath/services/$instanceId"
+        val nodeData = Marshaller.unmarshall(
+                testingServer.client.data.forPath(instancePath).toString(Charsets.UTF_8),
+                object : TypeReference<LockData>() {}
+        )
+        return nodeData.expirationDate + disconnectTimeout < Instant.now()
+    }
+
     protected fun assertInstanceIdMapping(instances: Set<Pair<ServiceInstanceIdRegistry, String>>) {
         instances.forEach {
             Assertions.assertEquals(it.second, it.first.instanceId)
+        }
+    }
+
+    protected fun assertInstanceIdLocksExpiration(
+            instances: Set<Pair<String, Boolean>>,
+            disconnectTimeout: Duration
+    ) {
+        instances.forEach {
+            Assertions.assertEquals(it.second, !isInstanceIdLockExpired(it.first, disconnectTimeout))
         }
     }
 

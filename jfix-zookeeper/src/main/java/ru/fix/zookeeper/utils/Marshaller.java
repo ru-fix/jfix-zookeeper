@@ -23,12 +23,12 @@ public class Marshaller {
             .enable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY);
 
-    public static String marshall(Object serializedObject) throws JsonProcessingException {
+    public static String marshall(Object serializedObject) {
         try {
             return mapper.writeValueAsString(serializedObject);
         } catch (JsonProcessingException ex) {
             logger.trace("Failed to marshalling pojo. Object details: {}", serializedObject, ex);
-            throw ex;
+            throw new IllegalStateException(ex);
         }
     }
 

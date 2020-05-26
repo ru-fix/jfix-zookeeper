@@ -1,6 +1,5 @@
 package ru.fix.zookeeper.lock;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.cache.NodeCache;
@@ -45,21 +44,17 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     private final NodeCache nodeCache;
     private volatile Instant expirationDate;
-    private final String serverId;
 
     /**
      * @param curatorFramework CuratorFramework
      * @param lockId           unique identifier for this instance of lock
-     * @param serverId         unique identifier for this application instance
      */
     public PersistentExpiringDistributedLock(
             CuratorFramework curatorFramework,
-            LockIdentity lockId,
-            String serverId
+            LockIdentity lockId
     ) throws Exception {
         this.curatorFramework = curatorFramework;
         this.lockId = lockId;
-        this.serverId = serverId;
         this.nodeCache = new NodeCache(curatorFramework, lockId.getNodePath());
 
         init();
@@ -113,7 +108,6 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                         LockData lockData = new LockData(
                                 lockId.getId(),
                                 expirationDate,
-                                serverId,
                                 lockId.getData()
                         );
                         curatorFramework.create()
@@ -214,7 +208,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     /**
      * @param acquirePeriod time to hold lock
-     * @param nodeStat lock's node stat
+     * @param nodeStat      lock's node stat
      * @return true if lock updated in transaction successfully
      * @throws Exception when zk perform
      */
@@ -222,12 +216,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     private boolean zkTxUpdateLockData(Duration acquirePeriod, Stat nodeStat) throws Exception {
         try {
             Instant nextExpirationDate = Instant.now().plus(acquirePeriod);
-            LockData lockData = new LockData(
-                    lockId.getId(),
-                    nextExpirationDate,
-                    serverId,
-                    lockId.getData()
-            );
+            LockData lockData = new LockData(lockId.getId(), nextExpirationDate, lockId.getData());
+
             curatorFramework.inTransaction()
                     .check().withVersion(nodeStat.getVersion()).forPath(lockId.getNodePath()).and()
                     .setData().forPath(lockId.getNodePath(), encodeLockData(lockData)).and().commit();
@@ -295,12 +285,9 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                                     .check().withVersion(nodeStat.getVersion()).forPath(lockId.getNodePath()).and()
                                     .delete().forPath(lockId.getNodePath()).and()
                                     .commit();
-                            logger.trace("The node={} has been released by worker {}", lockId.getNodePath(), serverId);
+                            logger.trace("The lock={} has been released", Marshaller.marshall(lockId));
                         } catch (KeeperException.NoNodeException | KeeperException.BadVersionException e) {
-                            logger.trace(
-                                    "Node={} already released by server {}.",
-                                    lockId.getNodePath(), serverId, e
-                            );
+                            logger.trace("Node={} already released.", Marshaller.marshall(lockId), e);
                         } finally {
                             expirationDate = Instant.ofEpochMilli(0);
                         }
@@ -309,20 +296,18 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             }
             return true;
         } catch (Exception e) {
-            logger.error(
-                    "Failed to release PersistentExpiringDistributedLock with lockId={}, path: {}",
-                    lockId.getId(), lockId.getNodePath(), e
-            );
+            logger.error("Failed to release PersistentExpiringDistributedLock with lockId={}", Marshaller.marshall(lockId), e);
             return false;
         }
     }
 
-    private byte[] encodeLockData(LockData lockData) throws JsonProcessingException {
+    private byte[] encodeLockData(LockData lockData) {
         return Marshaller.marshall(lockData).getBytes(charset);
     }
 
     private LockData decodeLockData(byte[] content) throws IOException {
-        return Marshaller.unmarshall(new String(content, charset), new TypeReference<>() {});
+        return Marshaller.unmarshall(new String(content, charset), new TypeReference<>() {
+        });
     }
 
     @Override

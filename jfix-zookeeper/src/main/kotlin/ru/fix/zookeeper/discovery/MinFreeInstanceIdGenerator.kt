@@ -1,8 +1,7 @@
 package ru.fix.zookeeper.discovery
 
-class MinFreeInstanceIdGenerator(
-        private val maxCountOfInstanceIds: Int
-) : InstanceIdGenerator {
+class MinFreeInstanceIdGenerator(maxCountOfInstanceIds: Int) : InstanceIdGenerator {
+    private val instanceIdValidator = InstanceIdValidator(maxCountOfInstanceIds)
 
     /**
      * For example, there are 3 instances:
@@ -23,10 +22,8 @@ class MinFreeInstanceIdGenerator(
                     }
                     acc + 1
                 }.toString()
-        assert(newInstanceId.toInt() <= maxCountOfInstanceIds) {
-            "Generated instance id has value $newInstanceId," +
-                    " but should be in range 1..${maxCountOfInstanceIds}"
+        return newInstanceId.also {
+            instanceIdValidator.validate(it)
         }
-        return newInstanceId
     }
 }

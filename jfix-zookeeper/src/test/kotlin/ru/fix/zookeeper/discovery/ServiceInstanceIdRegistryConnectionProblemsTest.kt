@@ -2,6 +2,7 @@ package ru.fix.zookeeper.discovery
 
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.netcrusher.core.reactor.NioReactor
@@ -138,6 +139,27 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         assertTrue(false)
     }
 
+    @Test
+    fun `prolongation of instance id's lock works fine after reconnect`() {
+        val disconnectTimeout = Duration.ofSeconds(4)
+        val proxyPort = SocketChecker.getAvailableRandomPort()
+        val crusher = tcpCrusher(proxyPort)
+
+        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
+
+        createInstanceIdRegistry("abs-rate", client = proxyClient, disconnectTimeout = disconnectTimeout)
+
+        println(zkTree())
+        assertInstances(mapOf("abs-rate" to setOf("1")))
+
+        crusher.reopen()
+        println(zkTree())
+
+        Thread.sleep(disconnectTimeout.toMillis())
+        println(zkTree())
+        assertInstances(mapOf("abs-rate" to setOf("1")))
+        assertFalse(isInstanceIdLockExpired("1", disconnectTimeout))
+    }
 
     private fun isAliveInstance(instance: ServiceInstanceIdRegistry): Boolean {
         return testingServer.client.checkExists().forPath(instance.instanceIdPath) != null

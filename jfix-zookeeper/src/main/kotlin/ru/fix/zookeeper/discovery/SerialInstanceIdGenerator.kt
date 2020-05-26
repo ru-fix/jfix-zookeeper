@@ -1,6 +1,7 @@
 package ru.fix.zookeeper.discovery
 
-class SerialInstanceIdGenerator : InstanceIdGenerator {
+class SerialInstanceIdGenerator(maxCountOfInstanceIds: Int) : InstanceIdGenerator {
+    private val instanceIdValidator = InstanceIdValidator(maxCountOfInstanceIds)
 
     /**
      * For example, there are 3 instances:
@@ -16,5 +17,8 @@ class SerialInstanceIdGenerator : InstanceIdGenerator {
                 .map { it.toInt() }
                 .max() ?: 0)
                 .plus(1).toString()
+                .also {
+                    instanceIdValidator.validate(it)
+                }
     }
 }

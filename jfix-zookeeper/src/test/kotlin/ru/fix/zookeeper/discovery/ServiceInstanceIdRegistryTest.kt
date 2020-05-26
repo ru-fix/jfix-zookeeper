@@ -2,8 +2,7 @@ package ru.fix.zookeeper.discovery
 
 import kotlinx.coroutines.*
 import org.awaitility.Awaitility
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.util.*
@@ -113,5 +112,21 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
         Thread.sleep(6000)
         println(zkTree())
 
+    }
+
+    @Test
+    fun `1`() {
+        val limit = 32
+        List(limit) {
+            createInstanceIdRegistry(maxInstancesCount = limit)
+        }.forEachIndexed { index, instance ->
+            assertEquals(index + 1, instance.instanceId.toInt())
+        }
+
+        var instanceOverLimit: ServiceInstanceIdRegistry? = null
+        assertThrows(java.lang.AssertionError::class.java) {
+            instanceOverLimit = createInstanceIdRegistry(maxInstancesCount = limit)
+        }
+        assertNull(instanceOverLimit)
     }
 }

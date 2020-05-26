@@ -2,21 +2,17 @@ package ru.fix.zookeeper.discovery
 
 import com.fasterxml.jackson.core.type.TypeReference
 import org.apache.curator.framework.CuratorFramework
-import org.apache.curator.framework.recipes.cache.TreeCache
-import org.apache.curator.framework.recipes.cache.TreeCacheEvent
-import org.apache.curator.framework.recipes.cache.TreeCacheListener
 import org.apache.curator.framework.state.ConnectionState
 import org.apache.curator.framework.state.ConnectionStateListener
-import org.apache.zookeeper.CreateMode
 import org.apache.zookeeper.KeeperException
 import org.slf4j.LoggerFactory
 import ru.fix.zookeeper.lock.LockData
 import ru.fix.zookeeper.lock.LockIdentity
 import ru.fix.zookeeper.lock.PersistentExpiringLockManager
 import ru.fix.zookeeper.lock.PersistentExpiringLockManagerConfig
-import ru.fix.zookeeper.transactional.TransactionalClient
 import ru.fix.zookeeper.utils.Marshaller
 import ru.fix.zookeeper.utils.ZkTreePrinter
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -30,11 +26,11 @@ class ServiceInstanceIdRegistry(
         private val instanceIdGenerator: InstanceIdGenerator,
         private val config: ServiceInstanceIdRegistryConfig
 ) : AutoCloseable {
+    lateinit var lockIdentity: LockIdentity
+        private set
     lateinit var instanceIdPath: String
         private set
     lateinit var instanceId: String
-        private set
-    lateinit var lockIdentity: LockIdentity
         private set
 
     companion object {
@@ -42,7 +38,13 @@ class ServiceInstanceIdRegistry(
     }
 
     private val lockManager: PersistentExpiringLockManager = PersistentExpiringLockManager(
-            curatorFramework, PersistentExpiringLockManagerConfig()
+            curatorFramework,
+            PersistentExpiringLockManagerConfig(
+                    reservationPeriod = config.disconnectTimeout.dividedBy(2),
+                    expirationPeriod = config.disconnectTimeout.dividedBy(3),
+                    lockProlongationInterval = config.disconnectTimeout.dividedBy(4),
+                    acquiringTimeout = Duration.ofSeconds(2)
+            )
     )
 
     init {
@@ -51,12 +53,12 @@ class ServiceInstanceIdRegistry(
                 .addListener(
                         ConnectionStateListener { client, newState ->
                             when (newState) {
-                                ConnectionState.RECONNECTED -> reconnect1()
+                                ConnectionState.RECONNECTED -> reconnect()
                                 else -> Unit
                             }
                         })
         initServiceRegistrationPath()
-        initInstanceId1()
+        initInstanceId()
     }
 
     private fun initServiceRegistrationPath() {
@@ -76,53 +78,36 @@ class ServiceInstanceIdRegistry(
      * Generate instance id, this id should be in range 1..maxInstancesCount, assertion error will be thrown otherwise.
      * If unsuccessful, then log error
      */
-    /*private fun initInstanceId() {
-        TransactionalClient.tryCommit(
-                curatorFramework,
-                config.countRegistrationAttempts,
-                { tx ->
-                    val alreadyRegisteredInstanceIds = curatorFramework.children.forPath(config.serviceRegistrationPath)
-                    val preparedInstanceId = instanceIdGenerator.nextId(alreadyRegisteredInstanceIds)
+    private fun initInstanceId() {
+        for (i in 1..config.countRegistrationAttempts) {
+            val alreadyRegisteredInstanceIds = curatorFramework.children.forPath(config.serviceRegistrationPath)
+            val preparedInstanceId = resolvePreviousConnection(alreadyRegisteredInstanceIds)
+                    ?: instanceIdGenerator.nextId(alreadyRegisteredInstanceIds)
 
-                    val instanceIdPath = "${config.serviceRegistrationPath}/$preparedInstanceId"
-                    val instanceIdData = InstanceIdData(config.serviceName, Instant.now(), CONNECTED, host = config.host, port = config.port)
-                    tx.createPathWithMode(instanceIdPath, CreateMode.EPHEMERAL)
-                            .setData(instanceIdPath, Marshaller.marshall(instanceIdData).toByteArray())
+            val instanceIdPath = "${config.serviceRegistrationPath}/$preparedInstanceId"
+            val instanceIdData = InstanceIdData(config.serviceName, Instant.now(), host = config.host, port = config.port)
+            val lockIdentity = LockIdentity(preparedInstanceId, instanceIdPath, Marshaller.marshall(instanceIdData))
 
-                    this.instanceIdPath = instanceIdPath
-                    this.instanceId = preparedInstanceId
-                },
-                { error ->
-                    logger.error("Failed to initialize service id registry and generate instance id. " +
-                            "Number of attempts: ${config.countRegistrationAttempts}. " +
-                            "Current registration node state: " +
-                            ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true),
-                            error
-                    )
-                }
-        )
-    }*/
-
-    private fun initInstanceId1() {
-        val alreadyRegisteredInstanceIds = curatorFramework.children.forPath(config.serviceRegistrationPath)
-        val preparedInstanceId = resolvePreviousConnection(alreadyRegisteredInstanceIds)
-                ?: instanceIdGenerator.nextId(alreadyRegisteredInstanceIds)
-
-        val instanceIdPath = "${config.serviceRegistrationPath}/$preparedInstanceId"
-        val instanceIdData = InstanceIdData(config.serviceName, Instant.now(), host = config.host, port = config.port)
-        val lockIdentity = LockIdentity(preparedInstanceId, instanceIdPath, Marshaller.marshall(instanceIdData))
-
-        val result = lockManager.tryAcquire(lockIdentity) { lock ->
-            logger.error("Failed to initialize service id registry and generate instance id. " +
-                    "Lock id: ${Marshaller.marshall(lock)}. " +
-                    "Current registration node state: " +
-                    ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
-            )
-        }
-        if (result) {
-            this.instanceIdPath = instanceIdPath
-            this.instanceId = preparedInstanceId
-            this.lockIdentity = lockIdentity
+            val result = lockManager.tryAcquire(lockIdentity) { lock ->
+                logger.warn("Failed to initialize service id registry and generate instance id. " +
+                        "Lock id: ${Marshaller.marshall(lock)}. " +
+                        "Current registration node state: " +
+                        ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
+                )
+            }
+            if (result) {
+                this.instanceIdPath = instanceIdPath
+                this.instanceId = preparedInstanceId
+                this.lockIdentity = lockIdentity
+                break
+            } else if (i == config.countRegistrationAttempts) {
+                logger.error("Failed to initialize instance id registry and get instance id. " +
+                        "Limit=${config.countRegistrationAttempts} of instance id registration reached. " +
+                        "Last try to get instance id was instanceId=$instanceId. " +
+                        "Current registration node state: " +
+                        ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
+                )
+            }
         }
     }
 
@@ -147,7 +132,7 @@ class ServiceInstanceIdRegistry(
         return null
     }
 
-    private fun reconnect1() {
+    private fun reconnect() {
         try {
             val lockData = Marshaller.unmarshall(
                     curatorFramework.data.forPath(instanceIdPath).toString(Charsets.UTF_8),
@@ -155,7 +140,8 @@ class ServiceInstanceIdRegistry(
             )
             when {
                 lockData.data == null -> {
-                    logger.error("ServiceInstanceIdRegistry reconnected, but lock for its instance id not found.")
+                    logger.error("ServiceInstanceIdRegistry reconnected, " +
+                            "but lock for its instance id=$instanceId not found.")
                 }
                 lockData.expirationDate.plus(config.disconnectTimeout).isAfter(Instant.now()) -> {
                     lockManager.release(lockIdentity)
@@ -185,15 +171,7 @@ class ServiceInstanceIdRegistry(
     }
 
     override fun close() {
-        TransactionalClient.tryCommit(
-                curatorFramework, config.countRegistrationAttempts,
-                {
-                    it.deletePath(instanceIdPath)
-                    logger.info("ServiceInstanceIdRegistry closed successfully")
-                },
-                {
-                    logger.error("Error during ServiceInstanceIdRegistry close: ", it)
-                }
-        )
+        lockManager.release(lockIdentity)
+        lockManager.close()
     }
 }

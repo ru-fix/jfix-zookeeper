@@ -81,8 +81,8 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             Duration reservationPeriod = config.getReservationPeriod();
             Duration acquiringTimeout = config.getAcquiringTimeout();
             if (!persistentLock.expirableAcquire(reservationPeriod, acquiringTimeout)) {
-                log.debug("Failed to acquire expirable lock. Acquire period: {}, timeout: {}, lockId: {}",
-                        reservationPeriod.toMillis(), acquiringTimeout.toMillis(), Marshaller.marshall(lockId)
+                log.warn("Failed to acquire expirable lock. Acquire period: {}, timeout: {}, lockId: {}",
+                        reservationPeriod, acquiringTimeout, Marshaller.marshall(lockId)
                 );
                 persistentLock.close();
                 return false;

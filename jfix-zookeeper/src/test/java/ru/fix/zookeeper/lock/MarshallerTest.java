@@ -22,11 +22,11 @@ public class MarshallerTest {
 
     private final Logger logger = LoggerFactory.getLogger(MarshallerTest.class);
 
-    private final LockData lockData = new LockData("93.184.216.34",
+    private final LockData lockData = new LockData(
+            "93.184.216.34",
             "example.org",
-            "2336799_DOMAIN_COM-VRSN",
             "1cf7407a-9f15-11e9-a2a3-2a2ae2dbcce4",
-            Instant.now()
+            Instant.parse("2020-05-26T07:01:25.589Z")
     );
 
     @Test

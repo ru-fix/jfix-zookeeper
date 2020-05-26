@@ -38,10 +38,11 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
     protected fun isInstanceIdLockExpired(instanceId: String, disconnectTimeout: Duration): Boolean {
         val instancePath = "$rootPath/services/$instanceId"
         val nodeData = Marshaller.unmarshall(
-                testingServer.client.data.forPath(instancePath).toString(Charsets.UTF_8),
+                testingServer.createClient().data.forPath(instancePath).toString(Charsets.UTF_8),
                 object : TypeReference<LockData>() {}
         )
-        return nodeData.expirationDate + disconnectTimeout < Instant.now()
+        val now = Instant.now()
+        return nodeData.expirationDate + disconnectTimeout < now
     }
 
     protected fun assertInstanceIdMapping(instances: Set<Pair<ServiceInstanceIdRegistry, String>>) {

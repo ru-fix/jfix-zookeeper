@@ -1,12 +1,11 @@
 package ru.fix.zookeeper.discovery
 
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
+import org.awaitility.Awaitility
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import java.time.Duration
 import java.util.*
 import java.util.concurrent.Executors
 
@@ -28,18 +27,26 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
     }
 
     @Test
-    fun `instance id in zk should disappear when this instance closed the session`() {
+    fun `curator closed, instance id registry can't prolong lock of instance id`() {
+        val disconnectTimeout = Duration.ofSeconds(5)
         val client = testingServer.createClient()
+        val client2 = testingServer.createClient()
         createInstanceIdRegistry("abs-rate", client = client)
         createInstanceIdRegistry("abs-rate")
-        createInstanceIdRegistry("drugkeeper")
+        createInstanceIdRegistry("drugkeeper", client = client2)
 
         println(zkTree())
         assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
-        client.close()
 
+        client2.blockUntilConnected()
+        client.close()
+        Awaitility.await()
+                .timeout(Duration.ofSeconds(1))
+                .until { !client.zookeeperClient.isConnected }
+
+        Thread.sleep(disconnectTimeout.multipliedBy(2).toMillis())
         println(zkTree())
-        assertInstances(mapOf("abs-rate" to setOf("2"), "drugkeeper" to setOf("3")))
+        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to true, "3" to true), disconnectTimeout)
     }
 
     @Test
@@ -51,7 +58,7 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
 
         List(servicesCount) {
             async(context = dispatcher) {
-                createInstanceIdRegistry(UUID.randomUUID().toString(), 20, maxInstancesCount = 127)
+                createInstanceIdRegistry(registrationRetryCount = 20, maxInstancesCount = 127)
             }
         }.awaitAll()
 
@@ -94,7 +101,7 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
     }
 
     @Test
-    fun `start and close ttl expired`() {
+    fun `close of instance id registry should release lock`() {
         val instances = listOf(
                 createInstanceIdRegistry("abs-rate")
         )

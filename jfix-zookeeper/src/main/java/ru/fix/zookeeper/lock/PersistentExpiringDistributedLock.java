@@ -16,6 +16,9 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.UUID;
 
 /**
  * Lock uses persistent zk nodes.
@@ -39,6 +42,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     private final CuratorFramework curatorFramework;
     private final LockIdentity lockId;
+    private String ownershipUuid;
 
     private final Object internalLock = new Object();
 
@@ -56,6 +60,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         this.curatorFramework = curatorFramework;
         this.lockId = lockId;
         this.nodeCache = new NodeCache(curatorFramework, lockId.getNodePath());
+        this.ownershipUuid = UUID.randomUUID().toString();
 
         init();
     }
@@ -88,7 +93,6 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         final Instant startTime = Instant.now();
 
         synchronized (internalLock) {
-
             while (true) { /* main loop */
 
                 /*
@@ -105,8 +109,10 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                      */
                     try {
                         expirationDate = Instant.now().plus(acquirePeriod);
+                        ownershipUuid = UUID.randomUUID().toString();
+
                         LockData lockData = new LockData(
-                                lockId.getId(),
+                                ownershipUuid,
                                 expirationDate,
                                 lockId.getData()
                         );
@@ -115,7 +121,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                                 .forPath(lockId.getNodePath(), encodeLockData(lockData));
                         return true;
                     } catch (KeeperException.NodeExistsException nodeExistExc) {
-                        logger.trace("Node already exist", nodeExistExc);
+                        logger.warn("Node already exist", nodeExistExc);
                     }
 
                     /*
@@ -134,7 +140,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                         return false;
                     }
 
-                    if (lockData.getExpirationDate().toEpochMilli() < System.currentTimeMillis()) {
+                    if (lockData.getExpirationDate().isBefore(Instant.now())) {
                         /*
                          * lock expired
                          */
@@ -148,7 +154,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                         /*
                          * lock active
                          */
-                        if (lockId.getId().equals(lockData.getUuid())) {
+                        if (ownershipUuid.equals(lockData.getOwnerUuid())) {
                             /*
                              * we last lock owner
                              */
@@ -173,19 +179,24 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                             long waitTime = Math.min(lockTTL, acquiringTryTTL);
 
                             if (waitTime > 0) {
-                                final long preWaitingTimeSnapshot = System.currentTimeMillis();
-                                logger.trace("Can't acquire lock '{}'. Already acquired by worker '{}'. " +
-                                                "Current lock id: '{}'. Lock expiration time: '{}', " +
+                                final OffsetDateTime preWaitingTimeSnapshot = OffsetDateTime.now(ZoneOffset.UTC);
+                                logger.warn(
+                                        "Can't acquire lock={}. Lock expiration time: '{}', " +
                                                 "current time: '{}'. Acquiring will be paused on {} ms",
-                                        lockId.getNodePath(), lockData.getUuid(), lockId.getId(),
-                                        lockData.getExpirationDate(), preWaitingTimeSnapshot, waitTime);
+                                        Marshaller.marshall(lockId), lockData.getExpirationDate(),
+                                        preWaitingTimeSnapshot, waitTime
+                                );
 
                                 // Wait in hope that lock will be released by current owner
                                 internalLock.wait(waitTime);
 
-                                final long logWaitingTime = System.currentTimeMillis() - preWaitingTimeSnapshot;
-                                logger.trace("Actual waiting time for release lock {} is {} ms. Planned waiting time " +
-                                        "is {}. Lock path: {}", lockId, logWaitingTime, waitTime, lockId.getNodePath());
+                                final Duration logWaitingTime = Duration.between(
+                                        preWaitingTimeSnapshot, OffsetDateTime.now(ZoneOffset.UTC)
+                                );
+                                logger.trace(
+                                        "Actual waiting time for release lock {} is {} ms. Planned waiting time is {}.",
+                                        Marshaller.marshall(lockId), logWaitingTime, waitTime
+                                );
                             }
 
                             /* continue with main loop */
@@ -197,8 +208,10 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                 final Duration actualAcquiringTime = Duration.between(startTime, Instant.now());
                 /* check if acquiring try time expired */
                 if (actualAcquiringTime.compareTo(acquiringTimeout) > 0) {
-                    logger.trace("Couldn't acquire lock for '{}' ms. Acquiring acquiringTimeout was expired. Lock path: {}, " +
-                            "lock id: {}", actualAcquiringTime, lockId.getNodePath(), lockId);
+                    logger.trace(
+                            "Couldn't acquire lock for '{}' ms. Acquiring acquiringTimeout was expired. Lock id: {}",
+                            actualAcquiringTime, Marshaller.marshall(lockId)
+                    );
                     return false;
                 }
             }
@@ -216,7 +229,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     private boolean zkTxUpdateLockData(Duration acquirePeriod, Stat nodeStat) throws Exception {
         try {
             Instant nextExpirationDate = Instant.now().plus(acquirePeriod);
-            LockData lockData = new LockData(lockId.getId(), nextExpirationDate, lockId.getData());
+            ownershipUuid = UUID.randomUUID().toString();
+            LockData lockData = new LockData(ownershipUuid, nextExpirationDate, lockId.getData());
 
             curatorFramework.inTransaction()
                     .check().withVersion(nodeStat.getVersion()).forPath(lockId.getNodePath()).and()
@@ -246,7 +260,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
-            if (!lockId.getId().equals(lockData.getUuid())) {
+            if (!ownershipUuid.equals(lockData.getOwnerUuid())) {
                 return false;
             }
             return zkTxUpdateLockData(prolongationPeriod, nodeStat);
@@ -279,7 +293,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                     }
 
                     // check if we are owner of the lock
-                    if (lockId.getId().equals(lockData.getUuid())) {
+                    if (lockId.getId().equals(lockData.getOwnerUuid())) {
                         try {
                             curatorFramework.inTransaction()
                                     .check().withVersion(nodeStat.getVersion()).forPath(lockId.getNodePath()).and()

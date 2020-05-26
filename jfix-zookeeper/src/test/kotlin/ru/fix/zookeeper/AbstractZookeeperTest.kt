@@ -14,7 +14,6 @@ abstract class AbstractZookeeperTest {
 
     @BeforeEach
     open fun setUp() {
-        System.setProperty("zookeeper.extendedTypesEnabled", "true")
         testingServer = ZKTestingServer()
                 .withCloseOnJvmShutdown(true)
                 .start()

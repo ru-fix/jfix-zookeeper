@@ -287,13 +287,13 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                     LockData lockData;
                     try {
                         lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
-                    } catch (KeeperException.NoNodeException noNodeException) {
-                        logger.debug("Node already removed on release.", noNodeException);
+                    } catch (KeeperException.NoNodeException e) {
+                        logger.debug("Node already removed on release.", e);
                         return true;
                     }
 
                     // check if we are owner of the lock
-                    if (lockId.getId().equals(lockData.getVersion())) {
+                    if (version.equals(lockData.getVersion())) {
                         try {
                             curatorFramework.inTransaction()
                                     .check().withVersion(nodeStat.getVersion()).forPath(lockId.getNodePath()).and()
@@ -310,7 +310,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             }
             return true;
         } catch (Exception e) {
-            logger.warn(
+            logger.error(
                     "Failed to release PersistentExpiringDistributedLock with lockId={}",
                     Marshaller.marshall(lockId), e
             );

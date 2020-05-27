@@ -32,8 +32,8 @@ internal class SerialInstanceIdGeneratorTest {
 
     @Test
     fun `next instance id should be greater by 1 than max instance id that already initiated`() {
-        val instanceId = idGenerator.nextId(listOf("200"))
-        assertEquals("201", instanceId)
+        val instanceId = idGenerator.nextId(listOf("20"))
+        assertEquals("21", instanceId)
     }
 
     @Test

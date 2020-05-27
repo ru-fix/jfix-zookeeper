@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.zookeeper.AbstractZookeeperTest
 import java.util.concurrent.Executors
 
@@ -92,7 +93,8 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
 
     private fun lockManager() = PersistentExpiringLockManager(
             testingServer.createClient(),
-            PersistentExpiringLockManagerConfig()
+            PersistentExpiringLockManagerConfig(),
+            NoopProfiler()
     )
 
     private fun nodeExists(path: String) = testingServer.client.checkExists().forPath(path) != null

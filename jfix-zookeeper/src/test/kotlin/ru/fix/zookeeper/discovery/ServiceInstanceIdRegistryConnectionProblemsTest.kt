@@ -1,7 +1,6 @@
 package ru.fix.zookeeper.discovery
 
 import org.awaitility.Awaitility.await
-import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -15,7 +14,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
     private val reactor: NioReactor = NioReactor()
 
     @Test
-    fun `client of service instance id registry lost connection and should`() {
+    fun `client lost connection and reconnect with same instance id when disconnect timeout didn't reached`() {
         val disconnectTimeout = Duration.ofSeconds(4)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
@@ -48,7 +47,6 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
 
         println(zkTree())
         assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
-        assertTrue(false)
     }
 
     @Test
@@ -76,7 +74,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         println(zkTree())
         Thread.sleep(disconnectTimeout.toMillis() / 2)
         println(zkTree())
-        Assertions.assertFalse(isInstanceIdLockExpired("1", disconnectTimeout))
+        assertFalse(isInstanceIdLockExpired("1", disconnectTimeout))
 
         instances.add(createInstanceIdRegistry("abs-rate"))
         await()
@@ -91,23 +89,25 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         println(zkTree())
 
         assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true, "4" to true), disconnectTimeout)
-
-
-
-        assertTrue(false)
-
     }
 
     @Test
-    fun `client disconnected, disconnect timeout reached, register new service with instance id that lock expired`() {
+    fun `client disconnected, disconnect timeout reached, register new service with instance id that have lock expired`() {
         val disconnectTimeout = Duration.ofSeconds(4)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
         val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
-
+        val host = "localhost"
+        val port = SocketChecker.getAvailableRandomPort()
         val instances = mutableListOf(
-                createInstanceIdRegistry("abs-rate", client = proxyClient, disconnectTimeout = disconnectTimeout),
+                createInstanceIdRegistry(
+                        "abs-rate",
+                        client = proxyClient,
+                        disconnectTimeout = disconnectTimeout,
+                        host = host,
+                        port = port
+                ),
                 createInstanceIdRegistry("abs-rate"),
                 createInstanceIdRegistry("drugkeeper")
         )
@@ -117,17 +117,19 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
 
         crusher.freeze()
         await()
-                .timeout(Duration.ofSeconds(2))
+                .timeout(Duration.ofSeconds(1))
                 .until { !proxyClient.zookeeperClient.isConnected }
-        println(zkTree())
 
+        println(zkTree())
         Thread.sleep(disconnectTimeout.toMillis() * 2)
-        crusher.unfreeze()
+
         println(zkTree())
         assertTrue(isInstanceIdLockExpired("1", disconnectTimeout))
 
         val client = testingServer.createClient()
-        instances.add(createInstanceIdRegistry("abs-rate", client = client))
+        instances.add(createInstanceIdRegistry(
+                "abs-rate", client = client, host = host, port = port, disconnectTimeout = disconnectTimeout
+        ))
         await()
                 .timeout(Duration.ofSeconds(1))
                 .until { client.zookeeperClient.isConnected }
@@ -135,8 +137,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
 
         assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), disconnectTimeout)
 
-
-        assertTrue(false)
+        crusher.close()
     }
 
     @Test

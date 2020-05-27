@@ -3,14 +3,16 @@ package ru.fix.zookeeper.lock;
 import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.fix.aggregating.profiler.Profiler;
+import ru.fix.dynamic.property.api.DynamicProperty;
+import ru.fix.stdlib.concurrency.threads.NamedExecutors;
+import ru.fix.stdlib.concurrency.threads.ReschedulableScheduler;
+import ru.fix.stdlib.concurrency.threads.Schedule;
 import ru.fix.zookeeper.utils.Marshaller;
 
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Acquires locks and releases them.
@@ -25,7 +27,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     protected final CuratorFramework curatorFramework;
     protected final PersistentExpiringLockManagerConfig config;
     private final Map<LockIdentity, LockContainer> locks = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService defaultScheduledExecutorService;
+    private final ReschedulableScheduler lockProlongationScheduler;
 
     private static class LockContainer {
         public final PersistentExpiringDistributedLock lock;
@@ -50,25 +52,23 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     public PersistentExpiringLockManager(
             CuratorFramework curatorFramework,
-            PersistentExpiringLockManagerConfig config
+            PersistentExpiringLockManagerConfig config,
+            Profiler profiler
     ) {
         this.curatorFramework = curatorFramework;
         this.config = config;
-
-        Runnable locksProlongationTask = () -> locks.forEach((lockId, lockContainer) -> {
-            if (!checkAndProlongIfAvailable(lockId, lockContainer.lock)) {
-                logger.info("Failed lock prolongation for lockId={}", Marshaller.marshall(lockId));
-                lockContainer.prolongationListener.onLockProlongationFailed(lockId);
-            }
-        });
-        defaultScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(r ->
-                new Thread(r, "lock-prolongation")
+        this.lockProlongationScheduler = NamedExecutors.newSingleThreadScheduler(
+                "instance-id-lock-prolong-scheduler", profiler
         );
-        defaultScheduledExecutorService.scheduleWithFixedDelay(
-                locksProlongationTask,
-                0L,
-                config.getLockProlongationInterval().toMillis(),
-                TimeUnit.MILLISECONDS
+        this.lockProlongationScheduler.schedule(
+                DynamicProperty.of(Schedule.withDelay(config.getLockProlongationInterval().toMillis())),
+                0,
+                () -> locks.forEach((lockId, lockContainer) -> {
+                    if (!checkAndProlongIfAvailable(lockId, lockContainer.lock)) {
+                        logger.info("Failed lock prolongation for lock={}", Marshaller.marshall(lockId));
+                        lockContainer.prolongationListener.onLockProlongationFailed(lockId);
+                    }
+                })
         );
     }
 
@@ -161,10 +161,6 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             }
         });
         locks.clear();
-
-        ScheduledExecutorService service = this.defaultScheduledExecutorService;
-        if (service != null) {
-            service.shutdown();
-        }
+        lockProlongationScheduler.close();
     }
 }

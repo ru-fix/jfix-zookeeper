@@ -3,6 +3,7 @@ package ru.fix.zookeeper.discovery
 import com.fasterxml.jackson.core.type.TypeReference
 import org.apache.curator.framework.CuratorFramework
 import org.junit.jupiter.api.Assertions
+import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.zookeeper.AbstractZookeeperTest
 import ru.fix.zookeeper.lock.LockData
 import ru.fix.zookeeper.utils.Marshaller
@@ -78,6 +79,7 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
                     host = host,
                     port = port,
                     disconnectTimeout = disconnectTimeout
-            )
+            ),
+            profiler = NoopProfiler()
     )
 }

@@ -36,6 +36,7 @@ object Libs {
     const val kotlinx_coroutines_core = "org.jetbrains.kotlinx:kotlinx-coroutines-core:${Vers.kotlin_coroutines}"
 
     const val jfix_stdlib_socket = "ru.fix:jfix-stdlib-socket:${Vers.jfix_stdlib}"
+    const val jfix_stdlib_concurrency= "ru.fix:jfix-stdlib-concurrency:${Vers.jfix_stdlib}"
 
     const val slf4j_api = "org.slf4j:slf4j-api:${Vers.slf4j}"
     const val log4j_slf4j_impl = "org.apache.logging.log4j:log4j-slf4j-impl:${Vers.log4j}"

@@ -25,7 +25,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(PersistentExpiringLockManager.class);
 
     protected final CuratorFramework curatorFramework;
-    protected final PersistentExpiringLockManagerConfig config;
+    protected final DynamicProperty<PersistentExpiringLockManagerConfig> config;
     private final Map<LockIdentity, LockContainer> locks = new ConcurrentHashMap<>();
     private final ReschedulableScheduler lockProlongationScheduler;
 
@@ -52,7 +52,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     public PersistentExpiringLockManager(
             CuratorFramework curatorFramework,
-            PersistentExpiringLockManagerConfig config,
+            DynamicProperty<PersistentExpiringLockManagerConfig> config,
             Profiler profiler
     ) {
         this.curatorFramework = curatorFramework;
@@ -61,7 +61,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 "instance-id-lock-prolong-scheduler", profiler
         );
         this.lockProlongationScheduler.schedule(
-                DynamicProperty.of(Schedule.withDelay(config.getLockProlongationInterval().toMillis())),
+                DynamicProperty.of(Schedule.withDelay(config.get().getLockProlongationInterval().toMillis())),
                 0,
                 () -> locks.forEach((lockId, lockContainer) -> {
                     if (!checkAndProlongIfAvailable(lockId, lockContainer.lock)) {
@@ -78,8 +78,8 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                     curatorFramework,
                     lockId
             );
-            Duration reservationPeriod = config.getReservationPeriod();
-            Duration acquiringTimeout = config.getAcquiringTimeout();
+            Duration reservationPeriod = config.get().getReservationPeriod();
+            Duration acquiringTimeout = config.get().getAcquiringTimeout();
             if (!persistentLock.expirableAcquire(reservationPeriod, acquiringTimeout)) {
                 logger.debug(
                         "Failed to acquire expirable lock. Acquire period: {}, timeout: {}, lockId: {}",
@@ -141,7 +141,9 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     ) {
         try {
             logger.info("Method checkAndProlong lockId={}", lockId.getId());
-            return lock.checkAndProlongIfExpiresIn(config.getReservationPeriod(), config.getExpirationPeriod());
+            return lock.checkAndProlongIfExpiresIn(
+                    config.get().getReservationPeriod(), config.get().getExpirationPeriod()
+            );
         } catch (Exception e) {
             logger.error("Failed to checkAndProlong persistent locks with lockId {}", Marshaller.marshall(lockId), e);
             return false;

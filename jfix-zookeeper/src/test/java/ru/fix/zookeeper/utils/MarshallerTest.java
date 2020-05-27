@@ -1,11 +1,11 @@
-package ru.fix.zookeeper.lock;
+package ru.fix.zookeeper.utils;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import kotlin.text.Charsets;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.fix.zookeeper.utils.Marshaller;
+import ru.fix.zookeeper.lock.LockData;
 
 import java.io.IOException;
 import java.net.URISyntaxException;

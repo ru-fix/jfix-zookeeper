@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import ru.fix.aggregating.profiler.NoopProfiler
+import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.zookeeper.AbstractZookeeperTest
 import java.util.concurrent.Executors
 
@@ -93,7 +94,7 @@ internal class LockManagerImplTest : AbstractZookeeperTest() {
 
     private fun lockManager() = PersistentExpiringLockManager(
             testingServer.createClient(),
-            PersistentExpiringLockManagerConfig(),
+            DynamicProperty.of(PersistentExpiringLockManagerConfig()),
             NoopProfiler()
     )
 

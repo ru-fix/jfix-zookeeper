@@ -7,6 +7,7 @@ import org.apache.curator.framework.state.ConnectionStateListener
 import org.apache.zookeeper.KeeperException
 import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.Profiler
+import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.zookeeper.lock.LockData
 import ru.fix.zookeeper.lock.LockIdentity
 import ru.fix.zookeeper.lock.PersistentExpiringLockManager
@@ -43,11 +44,13 @@ class ServiceInstanceIdRegistry(
 
     private val lockManager: PersistentExpiringLockManager = PersistentExpiringLockManager(
             curatorFramework,
-            PersistentExpiringLockManagerConfig(
-                    reservationPeriod = config.disconnectTimeout.dividedBy(2),
-                    expirationPeriod = config.disconnectTimeout.dividedBy(3),
-                    lockProlongationInterval = config.disconnectTimeout.dividedBy(4),
-                    acquiringTimeout = Duration.ofSeconds(1)
+            DynamicProperty.of(
+                    PersistentExpiringLockManagerConfig(
+                            reservationPeriod = config.disconnectTimeout.dividedBy(2),
+                            expirationPeriod = config.disconnectTimeout.dividedBy(3),
+                            lockProlongationInterval = config.disconnectTimeout.dividedBy(4),
+                            acquiringTimeout = Duration.ofSeconds(1)
+                    )
             ),
             profiler
     )
@@ -162,13 +165,13 @@ class ServiceInstanceIdRegistry(
                 }
                 else -> {
                     lockManager.release(lockIdentity)
-                    if(lockManager.tryAcquire(lockIdentity) {
-                        logger.error("Failed to acquire lock of instance id after reconnect " +
-                                "Lock id: ${Marshaller.marshall(it)}. " +
-                                "Current registration node state: " +
-                                ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
-                        )
-                    }) {
+                    if (lockManager.tryAcquire(lockIdentity) {
+                                logger.error("Failed to acquire lock of instance id after reconnect " +
+                                        "Lock id: ${Marshaller.marshall(it)}. " +
+                                        "Current registration node state: " +
+                                        ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
+                                )
+                            }) {
                         logger.info("ServiceInstanceIdRegistry client reconnected after connection issues " +
                                 "and got its previous instance id=$instanceId that have before reconnection")
                     } else {

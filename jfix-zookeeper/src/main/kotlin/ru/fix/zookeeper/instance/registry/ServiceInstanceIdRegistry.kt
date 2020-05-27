@@ -1,4 +1,4 @@
-package ru.fix.zookeeper.discovery
+package ru.fix.zookeeper.instance.registry
 
 import com.fasterxml.jackson.core.type.TypeReference
 import org.apache.curator.framework.CuratorFramework

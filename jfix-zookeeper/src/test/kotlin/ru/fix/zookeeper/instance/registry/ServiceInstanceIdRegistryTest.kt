@@ -1,4 +1,4 @@
-package ru.fix.zookeeper.discovery
+package ru.fix.zookeeper.instance.registry
 
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async

@@ -1,4 +1,4 @@
-package ru.fix.zookeeper.discovery
+package ru.fix.zookeeper.instance.registry
 
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -7,12 +7,12 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 
-internal class SerialInstanceIdGeneratorTest {
+internal class MinFreeInstanceIdGeneratorTest {
     private lateinit var idGenerator: InstanceIdGenerator
 
     @BeforeEach
     fun setUp() {
-        idGenerator = SerialInstanceIdGenerator(127)
+        idGenerator = MinFreeInstanceIdGenerator(127)
     }
 
     @Test
@@ -30,16 +30,16 @@ internal class SerialInstanceIdGeneratorTest {
     }
 
     @Test
-    fun `next instance id should be greater by 1 than max instance id that already initiated`() {
+    fun `next instance id should be min free id`() {
         val instanceId = idGenerator.nextId(listOf("20"))
-        assertEquals("21", instanceId)
+        assertEquals("1", instanceId)
     }
 
     @Test
     fun `instance id not greater limit of instance id`() {
         var instanceId: String? = null
         Assertions.assertThrows(AssertionError::class.java) {
-            instanceId = idGenerator.nextId(listOf("127"))
+            instanceId = idGenerator.nextId((1..127).map { it.toString() }.toList())
         }
         Assertions.assertNull(instanceId)
     }

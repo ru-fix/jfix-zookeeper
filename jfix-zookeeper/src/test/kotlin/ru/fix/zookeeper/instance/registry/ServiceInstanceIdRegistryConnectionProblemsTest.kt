@@ -1,4 +1,4 @@
-package ru.fix.zookeeper.discovery
+package ru.fix.zookeeper.instance.registry
 
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Assertions.assertFalse

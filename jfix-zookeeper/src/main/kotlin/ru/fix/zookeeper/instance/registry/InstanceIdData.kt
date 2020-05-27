@@ -1,4 +1,4 @@
-package ru.fix.zookeeper.discovery
+package ru.fix.zookeeper.instance.registry
 
 import com.fasterxml.jackson.annotation.JsonFormat
 import java.time.Instant

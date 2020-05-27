@@ -1,4 +1,4 @@
-package ru.fix.zookeeper.discovery
+package ru.fix.zookeeper.instance.registry
 
 class SerialInstanceIdGenerator(maxCountOfInstanceIds: Int) : InstanceIdGenerator {
     private val instanceIdValidator = InstanceIdValidator(maxCountOfInstanceIds)

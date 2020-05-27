@@ -1,6 +1,9 @@
 package ru.fix.zookeeper.discovery
 
-import kotlinx.coroutines.*
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import org.awaitility.Awaitility
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test

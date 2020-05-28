@@ -50,4 +50,5 @@ object Libs {
     const val junit_jupiter_params = "org.junit.jupiter:junit-jupiter-params:${Vers.junit_jupiter}"
     const val awaitility = "org.awaitility:awaitility:${Vers.awaitility}"
     const val netcrusher = "com.github.netcrusherorg:netcrusher-core:${Vers.netcrusher}"
+    const val kotest = "io.kotest:kotest-assertions-core:4.0.5"
 }

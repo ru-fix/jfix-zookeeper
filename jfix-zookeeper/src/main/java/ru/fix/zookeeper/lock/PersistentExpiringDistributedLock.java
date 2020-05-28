@@ -42,7 +42,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     private final CuratorFramework curatorFramework;
     private final LockIdentity lockId;
-    private String version;
+    private volatile String version;
 
     private final Object internalLock = new Object();
 

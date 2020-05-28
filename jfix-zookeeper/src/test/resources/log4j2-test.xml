@@ -15,6 +15,12 @@
         <Logger name="ru.fix" level="ERROR" additivity="false">
             <AppenderRef ref="console"/>
         </Logger>
+        <Logger name="org.apache.zookeeper" level="WARN">
+            <AppenderRef ref="console"/>
+        </Logger>
+        <Logger name="org.apache.curator" level="WARN">
+            <AppenderRef ref="console"/>
+        </Logger>
         <Root level="info">
             <AppenderRef ref="console"/>
         </Root>

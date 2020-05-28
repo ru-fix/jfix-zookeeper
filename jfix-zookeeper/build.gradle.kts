@@ -21,4 +21,5 @@ dependencies {
     testImplementation(Libs.apache_curator_test)
     testImplementation(Libs.netcrusher)
     testImplementation(project(":jfix-zookeeper-test"))
+    testImplementation(Libs.kotest)
 }

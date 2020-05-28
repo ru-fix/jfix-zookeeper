@@ -1,6 +1,7 @@
 package ru.fix.zookeeper.utils;
 
 import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.utils.ZKPaths;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,14 +50,15 @@ public class ZkTreePrinter {
         for (String child : getChildren(path)) {
             out.append(" ".repeat(Math.max(0, level)));
             try {
-                String data = includeData ? " " + new String(client.getData().forPath(path + "/" + child)) : "";
+                String data = includeData ? " " + new String(client.getData().forPath(ZKPaths.makePath(path, child))) : "";
                 out.append("└ ").append(child).append(data);
             } catch (Exception e) {
                 log.error("Error while trying print znode for path " + path, e);
             }
             out.append("\n");
 
-            print(path + "/" + child, out, level + 1, includeData);
+            String childPath = ZKPaths.makePath(path, child);
+            print(childPath, out, level + 1, includeData);
         }
     }
 

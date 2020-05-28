@@ -154,6 +154,16 @@ internal class PersistentExpiringDistributedLockTest {
 
     }
 
+    @Test
+    fun `temporary failed zookeeper connection do not invalidate lock`() {
+
+    }
+
+    @Test
+    fun `slow zookeeper connection do not invalidate lock`() {
+
+    }
+
     private fun createLock(id: String = idSequence.get(),
                            path: String = "$LOCKS_PATH/$id",
                            data: String? = null): PersistentExpiringDistributedLock {

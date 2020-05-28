@@ -8,21 +8,17 @@ plugins {
 dependencies {
     annotationProcessor(Libs.lombok)
 
-    compile(Libs.jfix_stdlib_socket)
-    compile(Libs.jackson_annotations)
-    compile(Libs.jackson_datatype_jsr310)
-    compile(Libs.jackson_kotlin_module)
-    compile(Libs.apache_curator)
-    compile(Libs.apache_curator_test)
+    implementation(Libs.jfix_stdlib_socket)
+    implementation(Libs.jackson_annotations)
+    implementation(Libs.jackson_datatype_jsr310)
+    implementation(Libs.jackson_kotlin_module)
+    implementation(Libs.apache_curator)
+    implementation(Libs.apache_curator_test)
 
     compileOnly(Libs.lombok)
-    compileOnly(Libs.junit4)
 
     testImplementation(Libs.logback)
     testImplementation(Libs.commons_io)
-    testImplementation(Libs.junit4)
-}
-
-tasks.test {
-    useJUnit()
+    testImplementation(Libs.junit_jupiter_engine)
+    testImplementation(Libs.junit_jupiter_api)
 }

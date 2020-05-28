@@ -5,17 +5,42 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.test.InstanceSpec;
 import org.apache.curator.test.TestingServer;
-import org.junit.rules.ExternalResource;
 import org.slf4j.Logger;
 import ru.fix.stdlib.socket.SocketChecker;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 
 import static org.slf4j.LoggerFactory.getLogger;
 
-public class ZKTestingServer extends ExternalResource {
+/**
+ * Runs single instance zookeeper server. <br>
+ * Stores node state in temp folder that will be removed during {@link #close()} <br>
+ * Creates CuratorFramework client that can be used in tests. <br>
+ * <br>
+ * This way server will be shutdown on by JVM shutdown hook <br>
+ * <pre>{@code
+ *   ZkTestingServer server = new ZkTestingServer()
+ *              .withCloseOnJvmShutdown()
+ *              .start();
+ * }
+ * </pre>
+ * <br>
+ * This way server shutdown is explicit<br>
+ * <pre>{@code
+ *   ZkTestingServer server = new ZkTestingServer()
+ *              .start();
+ *
+ *   // -- run tests --
+ *
+ *   server.close();
+ *
+ * }
+ * </pre>
+ */
+public class ZKTestingServer implements AutoCloseable {
 
     private static final Logger log = getLogger(ZKTestingServer.class);
 
@@ -26,7 +51,18 @@ public class ZKTestingServer extends ExternalResource {
     private CuratorFramework curatorFramework;
     private String uuid;
 
-    private void init() throws Exception {
+    private boolean closeOnJvmShutdown = false;
+
+    /**
+     * Register shutdown hook {@link Runtime#addShutdownHook(Thread)} and close on jvm exit.
+     * @param closeOnJvmShutdown
+     */
+    public ZKTestingServer withCloseOnJvmShutdown(boolean closeOnJvmShutdown){
+        this.closeOnJvmShutdown = closeOnJvmShutdown;
+        return this;
+    }
+
+    private void init() throws IOException {
         tmpDir = Files.createTempDirectory("tmpDir");
 
         for (int i = 0; i < 15; i++) {
@@ -43,24 +79,32 @@ public class ZKTestingServer extends ExternalResource {
             }
         }
 
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                zkServer.close();
-            } catch (Exception e) {
-                log.error("Failed to close zk testing server", e);
-            }
-
-            try {
-                Files.deleteIfExists(tmpDir);
-            } catch (Exception e) {
-                log.error("Failed to delete {}", tmpDir, e);
-            }
-        }));
+        if(closeOnJvmShutdown) {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> close()));
+        }
     }
 
+    /**
+     * Close server and remove temp directory
+     */
     @Override
-    protected void before() throws Throwable {
+    public void close(){
+        try {
+            zkServer.close();
+        } catch (Exception e) {
+            log.error("Failed to close zk testing server", e);
+        }
+
+        try {
+            Files.deleteIfExists(tmpDir);
+        } catch (Exception e) {
+            log.error("Failed to delete {}", tmpDir, e);
+        }
+    }
+
+
+
+    public ZKTestingServer start() throws Exception {
         init();
         uuid = UUID.randomUUID().toString();
 
@@ -69,6 +113,8 @@ public class ZKTestingServer extends ExternalResource {
         client.close();
 
         curatorFramework = createClient();
+
+        return this;
     }
 
     public int getPort() {

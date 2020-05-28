@@ -1,12 +1,16 @@
 package ru.fix.zookeeper.lock
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.string.shouldContain
-import org.junit.jupiter.api.*
+import org.awaitility.Awaitility.await
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.parallel.Execution
 import org.junit.jupiter.api.parallel.ExecutionMode
-import ru.fix.zookeeper.AbstractZookeeperTest
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.nio.charset.StandardCharsets
@@ -20,9 +24,9 @@ internal class PersistentExpiringDistributedLockTest {
     val LOCKS_PATH = "/locks"
 
     lateinit var zkServer: ZKTestingServer
-    val idSequence = object: Supplier<String> {
+    val idSequence = object : Supplier<String> {
         val counter = AtomicInteger()
-        override fun get(): String  = counter.incrementAndGet().toString()
+        override fun get(): String = counter.incrementAndGet().toString()
     }
 
     @BeforeAll
@@ -40,7 +44,12 @@ internal class PersistentExpiringDistributedLockTest {
     @Test
     fun `lock in zookeeper is a node with text data that contains uid`() {
         val id = idSequence.get()
-        val lock = createLock(id = id)
+        val lock = PersistentExpiringDistributedLock(
+                zkServer.client,
+                LockIdentity(id,
+                        "$LOCKS_PATH/id",
+                        data = null))
+
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
 
         println(ZkTreePrinter(zkServer.client).print("/", true))
@@ -72,7 +81,7 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `two actors acquire same lock`() {
+    fun `two actors acquire same lock, only one succeed`() {
         val id = idSequence.get()
 
         val lock1 = createLock(id)
@@ -86,7 +95,7 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `killing lock node in zk effectively release it`(){
+    fun `killing actor1 lock node in zk effectively release it for actor2`() {
         val id = idSequence.get()
 
         val lock1 = createLock(id)
@@ -104,13 +113,54 @@ internal class PersistentExpiringDistributedLockTest {
         lock2.close()
     }
 
+    @Test
+    fun `killing active lock node in zk leads to exception in lock release`() {
+        val id = idSequence.get()
+        val lock = createLock(path = "$LOCKS_PATH/$id")
+        lock.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1))
+        zkServer.client.delete().forPath("$LOCKS_PATH/$id")
+
+        shouldThrow<Exception>{
+            lock.release()
+        }.message.shouldContain("expired")
+    }
+
+    @Test
+    fun `expired lock in zk successfully overwritten and acquired by new lock`() {
+        val lock1 = createLock()
+        val lock2 = createLock()
+
+        lock1.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1)).shouldBeTrue()
+        await().until { lock2.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1)) }
+    }
+
+    @Test
+    fun `successfull prolong of active lock`(){
+
+    }
+
+    @Test
+    fun `failed prolongation of active alien lock`(){
+
+    }
+
+    @Test
+    fun `failed prolongation of expired alien lock`(){
+
+    }
+
+    @Test
+    fun `failed prolongation of own expired lock`(){
+
+    }
 
     private fun createLock(id: String = idSequence.get(),
+                           path: String = "$LOCKS_PATH/$id",
                            data: String? = null): PersistentExpiringDistributedLock {
         return PersistentExpiringDistributedLock(
                 zkServer.client,
                 LockIdentity(id,
-                        LOCKS_PATH,
+                        path,
                         data))
     }
 }

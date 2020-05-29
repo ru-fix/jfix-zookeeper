@@ -40,6 +40,7 @@ object Libs {
 
     const val slf4j_api = "org.slf4j:slf4j-api:${Vers.slf4j}"
     const val log4j_slf4j_impl = "org.apache.logging.log4j:log4j-slf4j-impl:${Vers.log4j}"
+    const val log4j_kotlin = "org.apache.logging.log4j:log4j-api-kotlin:1.0.0"
     const val jackson_annotations = "com.fasterxml.jackson.core:jackson-annotations:${Vers.jackson}"
     const val jackson_datatype_jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${Vers.jackson}"
     const val jackson_kotlin_module = "com.fasterxml.jackson.module:jackson-module-kotlin:${Vers.jackson}"
@@ -50,5 +51,5 @@ object Libs {
     const val junit_jupiter_params = "org.junit.jupiter:junit-jupiter-params:${Vers.junit_jupiter}"
     const val awaitility = "org.awaitility:awaitility:${Vers.awaitility}"
     const val netcrusher = "com.github.netcrusherorg:netcrusher-core:${Vers.netcrusher}"
-    const val kotest = "io.kotest:kotest-assertions-core:4.0.5"
+    const val kotest_assertions = "io.kotest:kotest-assertions-core-jvm:4.0.5"
 }

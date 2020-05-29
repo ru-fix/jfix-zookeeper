@@ -270,6 +270,12 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         }
     }
 
+    public boolean isAcquired() throws Exception {
+        Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
+        LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
+        return lockData.getExpirationDate().isBefore(Instant.now()) && version.equals(lockData.getVersion());
+    }
+
     /**
      * Release the lock.
      * Note: has no effect if timeout expired for lock (even if another thread acquired the lock because of that).

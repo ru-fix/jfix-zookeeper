@@ -89,7 +89,7 @@ internal class PersistentExpiringDistributedLockTest {
         val lock = createLock()
         lock.expirableAcquire(Duration.ofSeconds(100), Duration.ofSeconds(2)).shouldBeTrue()
         lock.isAcquired().shouldBeTrue()
-        lock.release()
+        lock.release().shouldBeTrue()
         lock.isAcquired().shouldBeFalse()
     }
 
@@ -98,10 +98,10 @@ internal class PersistentExpiringDistributedLockTest {
     fun `single actor acquires and unlocks twice`() {
         val lock = createLock()
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
-        lock.release()
+        lock.release().shouldBeTrue()
 
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
-        lock.release()
+        lock.release().shouldBeTrue()
     }
 
     @Test
@@ -109,7 +109,7 @@ internal class PersistentExpiringDistributedLockTest {
         val lock = createLock()
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
-        lock.release()
+        lock.release().shouldBeTrue()
     }
 
     @Test
@@ -133,28 +133,26 @@ internal class PersistentExpiringDistributedLockTest {
         val lock1 = createLock(id)
         val lock2 = createLock(id)
 
-        lock1.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
+        lock1.expirableAcquire(Duration.ofMinutes(1), Duration.ofMinutes(1)).shouldBeTrue()
 
         logger.info(ZkTreePrinter(zkServer.client).print("/", true))
 
         zkServer.client.delete().forPath("$LOCKS_PATH/$id")
 
-        lock2.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeFalse()
+        lock2.expirableAcquire(Duration.ofMinutes(1), Duration.ofMinutes(1)).shouldBeTrue()
 
         lock1.close()
         lock2.close()
     }
 
     @Test
-    fun `killing active lock node in zk leads to exception in lock release`() {
+    fun `killing active lock node in zk leads to failed release`() {
         val id = idSequence.get()
         val lock = createLock(path = "$LOCKS_PATH/$id")
         lock.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1))
         zkServer.client.delete().forPath("$LOCKS_PATH/$id")
-//
-//        shouldThrow<Exception>{
-//            lock.release()
-//        }.message.shouldContain("expired")
+
+        lock.release().shouldBeFalse()
     }
 
     @Test
@@ -222,7 +220,7 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `failed prolongation of own expired lock`() {
+    fun `success prolongation of own expired lock when lock was not acquired by others`() {
         val lock1 = createLock()
         lock1.expirableAcquire(Duration.ofMillis(1), Duration.ofSeconds(10)).shouldBeTrue()
 
@@ -234,7 +232,7 @@ internal class PersistentExpiringDistributedLockTest {
 
         logger.info(ZkTreePrinter(zkServer.client).print("/", true))
 
-        lock1.checkAndProlong(Duration.ofSeconds(10)).shouldBeFalse()
+        lock1.checkAndProlong(Duration.ofSeconds(10)).shouldBeTrue()
     }
 
     interface NetworkFailure {
@@ -335,6 +333,6 @@ internal class PersistentExpiringDistributedLockTest {
         val lockData = zkServer.client.data.forPath("$LOCKS_PATH/$id").toString(StandardCharsets.UTF_8)
         lockData.shouldContain(hostIp)
         lockData.shouldContain(hostName)
-        lock.release()
+        lock.release().shouldBeTrue()
     }
 }

@@ -245,14 +245,18 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     /**
      * Check that caller still owns the lock and prolongs lock expiration time if so.
+     * If lock is expired but not acquired by anybody else, this mean that there is no risk
+     * to treat such lock as if caller still owns it. In this case checkAndProlong method
+     * preserve ownership and prolongs lock to new duration.
      * <p>
-     * WARNING! Use {@link #checkAndProlongIfExpiresIn(Duration, Duration)} as much as possible
+     * Use {@link #checkAndProlongIfExpiresIn(Duration, Duration)} as much as possible
      * instead of {@link #checkAndProlong(Duration)} due to performance issue.
-     * {@link #checkAndProlongIfExpiresIn(Duration, Duration)} - cheap operation.
-     * {@link #checkAndProlong(Duration)} - heavy operation.
+     * {@link #checkAndProlongIfExpiresIn(Duration, Duration)} makes zk node update only if needed,
+     * {@link #checkAndProlong(Duration)} - always makes zk node update.
+     * See details {@link #checkAndProlongIfExpiresIn(Duration, Duration)}
      *
      * @param prolongationPeriod time in millis which current instance will hold the lock until auto-expiration
-     * @return {@code true} if current thread owns the lock and prolongation was performed,
+     * @return {@code true} if current thread owns the lock (event if lock is expired) and prolongation was performed,
      * {@code false} if current instance doesn't owns the lock
      * @throws Exception ZK errors, connection interruptions
      */
@@ -270,6 +274,9 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         }
     }
 
+    /**
+     * Check if lock is not expired and in acquired state.
+     */
     public boolean isAcquired() throws Exception {
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));

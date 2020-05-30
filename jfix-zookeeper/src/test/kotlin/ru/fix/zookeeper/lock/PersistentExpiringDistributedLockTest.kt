@@ -24,6 +24,7 @@ import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.TimeUnit.MINUTES
+import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Supplier
@@ -222,7 +223,18 @@ internal class PersistentExpiringDistributedLockTest {
 
     @Test
     fun `failed prolongation of own expired lock`() {
+        val lock1 = createLock()
+        lock1.expirableAcquire(Duration.ofMillis(1), Duration.ofSeconds(10)).shouldBeTrue()
 
+        logger.info(ZkTreePrinter(zkServer.client).print("/", true))
+
+        await().atMost(10, SECONDS).until {
+            lock1.isAcquired() == false
+        }
+
+        logger.info(ZkTreePrinter(zkServer.client).print("/", true))
+
+        lock1.checkAndProlong(Duration.ofSeconds(10)).shouldBeFalse()
     }
 
     interface NetworkFailure {

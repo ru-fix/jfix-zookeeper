@@ -271,9 +271,12 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     }
 
     public boolean isAcquired() throws Exception {
-        Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
-        LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
-        return lockData.getExpirationDate().isBefore(Instant.now()) && version.equals(lockData.getVersion());
+        try {
+            LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
+            return lockData.getExpirationDate().isAfter(Instant.now()) && version.equals(lockData.getVersion());
+        } catch (KeeperException.NoNodeException noNodeException) {
+            return false;
+        }
     }
 
     /**

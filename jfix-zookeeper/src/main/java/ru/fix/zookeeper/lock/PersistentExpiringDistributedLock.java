@@ -8,6 +8,7 @@ import org.apache.zookeeper.data.Stat;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.fix.zookeeper.transactional.TransactionalClient;
 import ru.fix.zookeeper.utils.Marshaller;
 
 import javax.annotation.concurrent.NotThreadSafe;
@@ -19,6 +20,8 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Lock uses persistent zk nodes.
@@ -36,6 +39,24 @@ import java.util.UUID;
  */
 @NotThreadSafe
 public class PersistentExpiringDistributedLock implements AutoCloseable {
+    final class State {
+        final boolean isOwn;
+        final boolean isExpired;
+
+        private State(boolean isOwn, boolean isExpired) {
+            this.isOwn = isOwn;
+            this.isExpired = isExpired;
+        }
+
+        boolean isExpired() {
+            return isExpired;
+        }
+
+        boolean isOwn() {
+            return isOwn;
+        }
+    }
+
 
     private static final Logger logger = LoggerFactory.getLogger(PersistentExpiringDistributedLock.class);
     private static final Charset charset = StandardCharsets.UTF_8;
@@ -44,7 +65,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     private final LockIdentity lockId;
     private volatile String version;
 
-    private final Object internalLock = new Object();
+    private final Semaphore lockNodeStateChanged = new Semaphore(0);
 
     private final NodeCache nodeCache;
     private volatile Instant expirationDate;
@@ -66,13 +87,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     }
 
     private void init() throws Exception {
-        nodeCache.getListenable().addListener(() -> {
-                    synchronized (internalLock) {
-                        internalLock.notifyAll();
-                    }
-                }
-        );
-        nodeCache.start();
+        nodeCache.getListenable().addListener(lockNodeStateChanged::release);
+        nodeCache.start(true);
     }
 
     /**
@@ -92,129 +108,129 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     ) throws Exception {
         final Instant startTime = Instant.now();
 
-        synchronized (internalLock) {
-            while (true) { /* main loop */
+
+        while (true) { /* main loop */
+
+            /*
+             * read lock data
+             */
+            Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
+
+            /*
+             * check if node path exist
+             */
+            if (nodeStat == null) {
+                /*
+                 * lock node does not exist
+                 */
+                try {
+                    expirationDate = Instant.now().plus(acquirePeriod);
+                    version = UUID.randomUUID().toString();
+
+                    LockData lockData = new LockData(
+                            version,
+                            expirationDate,
+                            lockId.getData()
+                    );
+                    curatorFramework.create()
+                            .creatingParentContainersIfNeeded()
+                            .forPath(lockId.getNodePath(), encodeLockData(lockData));
+                    return true;
+                } catch (KeeperException.NodeExistsException e) {
+                    logger.debug("Node already exist", e);
+                }
 
                 /*
-                 * read lock data
+                 * if node already exist then continue with main loop
                  */
-                Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
 
+            } else {
                 /*
-                 * check if node path exist
+                 * lock node exist
                  */
-                if (nodeStat == null) {
+                LockData lockData;
+                try {
+                    lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
+                } catch (KeeperException.NoNodeException e) {
+                    logger.warn("Node was removed by another between check exist and node data getting.", e);
+                    return false;
+                }
+
+                if (lockData.getExpirationDate().isBefore(Instant.now())) {
                     /*
-                     * lock node does not exist
+                     * lock expired
                      */
-                    try {
-                        expirationDate = Instant.now().plus(acquirePeriod);
-                        version = UUID.randomUUID().toString();
-
-                        LockData lockData = new LockData(
-                                version,
-                                expirationDate,
-                                lockId.getData()
-                        );
-                        curatorFramework.create()
-                                .creatingParentContainersIfNeeded()
-                                .forPath(lockId.getNodePath(), encodeLockData(lockData));
+                    if (zkTxUpdateLockData(acquirePeriod, nodeStat)) {
                         return true;
-                    } catch (KeeperException.NodeExistsException e) {
-                        logger.debug("Node already exist", e);
                     }
 
-                    /*
-                     * if node already exist then continue with main loop
-                     */
+                    /* tx failed, continue with main loop*/
 
                 } else {
                     /*
-                     * lock node exist
+                     * lock active
                      */
-                    LockData lockData;
-                    try {
-                        lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
-                    } catch (KeeperException.NoNodeException e) {
-                        logger.warn("Node was removed by another between check exist and node data getting.", e);
-                        return false;
-                    }
-
-                    if (lockData.getExpirationDate().isBefore(Instant.now())) {
+                    if (version.equals(lockData.getVersion())) {
                         /*
-                         * lock expired
+                         * we last lock owner
                          */
                         if (zkTxUpdateLockData(acquirePeriod, nodeStat)) {
                             return true;
                         }
 
-                        /* tx failed, continue with main loop*/
+                        /* tx failed, continue with main loop */
 
                     } else {
                         /*
-                         * lock active
+                         * we are not last lock owner
                          */
-                        if (version.equals(lockData.getVersion())) {
-                            /*
-                             * we last lock owner
-                             */
-                            if (zkTxUpdateLockData(acquirePeriod, nodeStat)) {
-                                return true;
-                            }
-
-                            /* tx failed, continue with main loop */
-
-                        } else {
-                            /*
-                             * we are not last lock owner
-                             */
 
 
-                            /* lock expired after */
-                            long lockTTL = Math.max(0, lockData.getExpirationDate().toEpochMilli() - Instant.now().toEpochMilli());
+                        /* lock expired after */
+                        long lockTTL = Math.max(0, lockData.getExpirationDate().toEpochMilli() - Instant.now().toEpochMilli());
 
-                            /* acquiring try time expired after */
-                            long acquiringTryTTL = Math.max(0, startTime.toEpochMilli() + acquiringTimeout.toMillis() - Instant.now().toEpochMilli());
+                        /* acquiring try time expired after */
+                        long acquiringTryTTL = Math.max(0, startTime.toEpochMilli() + acquiringTimeout.toMillis() - Instant.now().toEpochMilli());
 
-                            long waitTime = Math.min(lockTTL, acquiringTryTTL);
+                        long waitTime = Math.min(lockTTL, acquiringTryTTL);
 
-                            if (waitTime > 0) {
-                                final OffsetDateTime preWaitingTimeSnapshot = OffsetDateTime.now(ZoneOffset.UTC);
-                                logger.debug(
-                                        "Can't acquire lock={}. Lock expiration time: '{}', " +
-                                                "current time: '{}'. Acquiring will be paused on {} ms",
-                                        Marshaller.marshall(lockId), lockData.getExpirationDate(),
-                                        preWaitingTimeSnapshot, waitTime
-                                );
+                        if (waitTime > 0) {
+                            final OffsetDateTime preWaitingTimeSnapshot = OffsetDateTime.now(ZoneOffset.UTC);
+                            logger.debug(
+                                    "Can't acquire lock={}. Lock expiration time: '{}', " +
+                                            "current time: '{}'. Acquiring will be paused on {} ms",
+                                    Marshaller.marshall(lockId), lockData.getExpirationDate(),
+                                    preWaitingTimeSnapshot, waitTime
+                            );
 
-                                // Wait in hope that lock will be released by current owner
-                                internalLock.wait(waitTime);
+                            // Wait in hope that lock will be released by current owner
+                            lockNodeStateChanged.tryAcquire(waitTime, TimeUnit.MILLISECONDS);
 
-                                final Duration logWaitingTime = Duration.between(
-                                        preWaitingTimeSnapshot, OffsetDateTime.now(ZoneOffset.UTC)
-                                );
-                                logger.debug(
-                                        "Actual waiting time for release lock {} is {}. Planned waiting time is {}ms.",
-                                        Marshaller.marshall(lockId), logWaitingTime, waitTime
-                                );
-                            }
-
-                            /* continue with main loop */
-
+                            final Duration logWaitingTime = Duration.between(
+                                    preWaitingTimeSnapshot, OffsetDateTime.now(ZoneOffset.UTC)
+                            );
+                            logger.debug(
+                                    "Actual waiting time for release lock {} is {}. Planned waiting time is {}ms.",
+                                    Marshaller.marshall(lockId), logWaitingTime, waitTime
+                            );
                         }
+
+                        /* continue with main loop */
+
                     }
                 }
-
-                final Duration actualAcquiringTime = Duration.between(startTime, Instant.now());
-                /* check if acquiring try time expired */
-                if (actualAcquiringTime.compareTo(acquiringTimeout) > 0) {
-                    logger.debug(
-                            "Couldn't acquire lock for '{}' ms. Acquiring acquiringTimeout was expired. Lock id: {}",
-                            actualAcquiringTime, Marshaller.marshall(lockId)
-                    );
-                    return false;
-                }
             }
+
+            final Duration actualAcquiringTime = Duration.between(startTime, Instant.now());
+            /* check if acquiring try time expired */
+            if (actualAcquiringTime.compareTo(acquiringTimeout) > 0) {
+                logger.debug(
+                        "Couldn't acquire lock for '{}' ms. Acquiring acquiringTimeout was expired. Lock id: {}",
+                        actualAcquiringTime, Marshaller.marshall(lockId)
+                );
+                return false;
+            }
+
 
         }
     }
@@ -225,7 +241,6 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      * @return true if lock updated in transaction successfully
      * @throws Exception when zk perform
      */
-    @SuppressWarnings("deprecation")
     private boolean zkTxUpdateLockData(Duration acquirePeriod, Stat nodeStat) throws Exception {
         try {
             Instant nextExpirationDate = Instant.now().plus(acquirePeriod);
@@ -277,61 +292,105 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     /**
      * Check if lock is not expired and in acquired state.
      */
-    public boolean isAcquired() throws Exception {
+    public State getState() throws Exception {
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
-            return lockData.getExpirationDate().isAfter(Instant.now()) && version.equals(lockData.getVersion());
+            return new State(
+                    version.equals(lockData.getVersion()),
+                    lockData.getExpirationDate().isAfter(Instant.now()));
         } catch (KeeperException.NoNodeException noNodeException) {
-            return false;
+            return new State(false, true);
+        }
+    }
+
+    final static class ReleaseResult {
+        enum Status {
+            /**
+             * Lock was owned and not expired, lock successful released
+             */
+            LOCK_RELEASED,
+            /**
+             * Lock is still owned but already expired, no operation performed
+             */
+            LOCK_STILL_OWNED_BUT_EXPIRED,
+            /**
+             * Lock is not owned or absent
+             */
+            LOCK_IS_LOST,
+            /**
+             * Network or other failure, see exception for details
+             */
+            FAILURE
+        }
+
+        private final Status status;
+        private final Exception exception;
+
+        private ReleaseResult(Status status, Exception exception) {
+            this.status = status;
+            this.exception = exception;
+        }
+
+        public Status getStatus() {
+            return status;
+        }
+
+        public Exception getException() {
+            return exception;
         }
     }
 
     /**
-     * Release the lock.
-     * Note: has no effect if timeout expired for lock (even if another thread acquired the lock because of that).
-     *
-     * @return false in case ZK errors, connection interruptions and other conditions when it is hard to clarify
-     * result of operation
+     * Releases the lock. Has no effect if lock expired, removed or lock is owned by others.
      */
-    @SuppressWarnings("deprecation")
-    public boolean release() {
+    public ReleaseResult release() {
         try {
-            synchronized (internalLock) {
-                Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
-                if (nodeStat != null) {
-
-                    LockData lockData;
-                    try {
-                        lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
-                    } catch (KeeperException.NoNodeException e) {
-                        logger.debug("Node already removed on release.", e);
-                        return true;
-                    }
-
-                    // check if we are owner of the lock
-                    if (version.equals(lockData.getVersion())) {
-                        try {
-                            curatorFramework.inTransaction()
-                                    .check().withVersion(nodeStat.getVersion()).forPath(lockId.getNodePath()).and()
-                                    .delete().forPath(lockId.getNodePath()).and()
-                                    .commit();
-                            logger.trace("The lock={} has been released", Marshaller.marshall(lockId));
-                        } catch (KeeperException.NoNodeException | KeeperException.BadVersionException e) {
-                            logger.debug("Node={} already released.", Marshaller.marshall(lockId), e);
-                        } finally {
-                            expirationDate = Instant.ofEpochMilli(0);
-                        }
-                    }
+            Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
+            if (nodeStat != null) {
+                LockData lockData;
+                try {
+                    lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
+                } catch (KeeperException.NoNodeException e) {
+                    logger.debug("Node already removed on release.", e);
+                    return new ReleaseResult(ReleaseResult.Status.LOCK_IS_LOST, null);
                 }
+
+                //TODO: delete in transaction with version
+
+                // check if we are owner of the lock
+                if (!version.equals(lockData.getVersion())) {
+                    return new ReleaseResult(ReleaseResult.Status.LOCK_IS_LOST, null);
+                }
+
+                if (lockData.getExpirationDate().isBefore(Instant.now())) {
+                    return new ReleaseResult(ReleaseResult.Status.LOCK_STILL_OWNED_BUT_EXPIRED, null);
+                }
+
+                try {
+                    TransactionalClient.createTransaction(curatorFramework)
+                            .checkPathWithVersion(lockId.getNodePath(), nodeStat.getVersion())
+                            .deletePath(lockId.getNodePath())
+                            .commit();
+
+                    logger.trace("The lock={} has been released", Marshaller.marshall(lockId));
+                    return new ReleaseResult(ReleaseResult.Status.LOCK_RELEASED, null);
+
+                } catch (KeeperException.NoNodeException | KeeperException.BadVersionException e) {
+                    logger.debug("Node={} already released.", Marshaller.marshall(lockId), e);
+                    return new ReleaseResult(ReleaseResult.Status.LOCK_IS_LOST, null);
+                } finally {
+                    expirationDate = Instant.ofEpochMilli(0);
+                }
+
             }
-            return true;
         } catch (Exception e) {
             logger.error(
                     "Failed to release PersistentExpiringDistributedLock with lockId={}",
                     Marshaller.marshall(lockId), e
             );
-            return false;
+            return new ReleaseResult(ReleaseResult.Status.FAILURE, e);
         }
+        return new ReleaseResult(ReleaseResult.Status.FAILURE, null);
     }
 
     private byte[] encodeLockData(LockData lockData) {
@@ -344,11 +403,15 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() {
         try {
             release();
         } finally {
-            nodeCache.close();
+            try {
+                nodeCache.close();
+            } catch (Exception exception) {
+                logger.error("Failed to close nodeCashe on lock " + lockId.getNodePath(), exception);
+            }
         }
     }
 

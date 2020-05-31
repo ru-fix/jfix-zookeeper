@@ -41,11 +41,11 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             this.prolongationListener = prolongationListener;
         }
 
-        public boolean release() {
+        public PersistentExpiringDistributedLock.ReleaseResult release() {
             return this.lock.release();
         }
 
-        public void close() throws Exception {
+        public void close() {
             lock.close();
         }
     }
@@ -123,15 +123,21 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             return;
         }
 
-        if (persistentLockContainer.release()) {
-            logger.info("Released lock with lockId={}", Marshaller.marshall(lockId));
-            locks.remove(lockId);
-        } else {
-            try {
+        var releaseResult = persistentLockContainer.release();
+        switch (releaseResult.getStatus()) {
+            case LOCK_IS_LOST:
+                logger.warn("Lock " + lockId + " is lost");
+            case LOCK_RELEASED:
+                locks.remove(lockId);
                 persistentLockContainer.close();
-            } catch (Exception e) {
-                logger.error("Error during closing lock with lockId={}", Marshaller.marshall(lockId), e);
-            }
+                break;
+            case LOCK_STILL_OWNED_BUT_EXPIRED:
+                logger.warn("Lock " + lockId + "tried to be release but already expired");
+                break;
+            case FAILURE:
+                logger.error("Failed to release lock: "+ lockId, releaseResult.getException());
+            default:
+                throw new IllegalStateException("" + releaseResult.getStatus());
         }
     }
 

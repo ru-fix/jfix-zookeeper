@@ -1,8 +1,9 @@
 package ru.fix.zookeeper.lock
 
-//import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.apache.curator.framework.state.ConnectionState
 import org.apache.curator.framework.state.ConnectionStateListener
@@ -18,6 +19,7 @@ import org.netcrusher.core.reactor.NioReactor
 import org.netcrusher.tcp.TcpCrusher
 import org.netcrusher.tcp.TcpCrusherBuilder
 import ru.fix.stdlib.socket.SocketChecker
+import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock.ReleaseResult
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.net.InetAddress
@@ -88,9 +90,18 @@ internal class PersistentExpiringDistributedLockTest {
     fun `acquired lock isAcquired, released lock is not Acquired`(){
         val lock = createLock()
         lock.expirableAcquire(Duration.ofSeconds(100), Duration.ofSeconds(2)).shouldBeTrue()
-        lock.isAcquired().shouldBeTrue()
-        lock.release().shouldBeTrue()
-        lock.isAcquired().shouldBeFalse()
+        lock.state.apply{
+            isExpired.shouldBeFalse()
+            isOwn.shouldBeTrue()
+        }
+        lock.release().apply {
+            status.shouldBe(ReleaseResult.Status.LOCK_RELEASED)
+            exception.shouldBeNull()
+        }
+        lock.state.apply {
+            isOwn.shouldBeFalse()
+            isExpired.shouldBeTrue()
+        }
     }
 
 
@@ -98,10 +109,16 @@ internal class PersistentExpiringDistributedLockTest {
     fun `single actor acquires and unlocks twice`() {
         val lock = createLock()
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
-        lock.release().shouldBeTrue()
+        lock.release().apply {
+            status.shouldBe(ReleaseResult.Status.LOCK_RELEASED)
+            exception.shouldBeNull()
+        }
 
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
-        lock.release().shouldBeTrue()
+        lock.release().apply {
+            status.shouldBe(ReleaseResult.Status.LOCK_RELEASED)
+            exception.shouldBeNull()
+        }
     }
 
     @Test
@@ -109,7 +126,10 @@ internal class PersistentExpiringDistributedLockTest {
         val lock = createLock()
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
-        lock.release().shouldBeTrue()
+        lock.release().apply {
+            status.shouldBe(ReleaseResult.Status.LOCK_RELEASED)
+            exception.shouldBeNull()
+        }
     }
 
     @Test
@@ -152,7 +172,10 @@ internal class PersistentExpiringDistributedLockTest {
         lock.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1))
         zkServer.client.delete().forPath("$LOCKS_PATH/$id")
 
-        lock.release().shouldBeFalse()
+        lock.release().apply {
+            status.shouldBe(ReleaseResult.Status.LOCK_IS_LOST)
+            exception.shouldBeNull()
+        }
     }
 
     @Test
@@ -162,6 +185,17 @@ internal class PersistentExpiringDistributedLockTest {
 
         lock1.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1)).shouldBeTrue()
         await().until { lock2.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1)) }
+    }
+
+    @Test
+    fun `expired lock is released with EXPIRED status`() {
+        val lock1 = createLock()
+        lock1.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1)).shouldBeTrue()
+        await().until { lock1.getState().isExpired }
+        lock1.release().apply {
+            status.shouldBe(ReleaseResult.Status.LOCK_STILL_OWNED_BUT_EXPIRED)
+            exception.shouldBeNull()
+        }
     }
 
     @Test
@@ -214,7 +248,7 @@ internal class PersistentExpiringDistributedLockTest {
 
 
         await().atMost(1, MINUTES).until {
-            lock2.isAcquired() == false
+            lock2.state.run { isExpired && !isOwn }
         }
         lock1.checkAndProlong(Duration.ofSeconds(10)).shouldBeFalse()
     }
@@ -227,7 +261,7 @@ internal class PersistentExpiringDistributedLockTest {
         logger.info(ZkTreePrinter(zkServer.client).print("/", true))
 
         await().atMost(10, SECONDS).until {
-            lock1.isAcquired() == false
+            !lock1.state.isExpired
         }
 
         logger.info(ZkTreePrinter(zkServer.client).print("/", true))
@@ -333,6 +367,9 @@ internal class PersistentExpiringDistributedLockTest {
         val lockData = zkServer.client.data.forPath("$LOCKS_PATH/$id").toString(StandardCharsets.UTF_8)
         lockData.shouldContain(hostIp)
         lockData.shouldContain(hostName)
-        lock.release().shouldBeTrue()
+        lock.release().apply {
+            status.shouldBe(ReleaseResult.Status.LOCK_RELEASED)
+            exception.shouldBeNull()
+        }
     }
 }

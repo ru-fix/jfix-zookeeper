@@ -12,6 +12,7 @@ dependencies {
     implementation(Libs.jfix_stdlib_concurrency)
 
     testImplementation(Libs.kotest_assertions)
+    testImplementation(Libs.kotest_runner)
     testImplementation(Libs.log4j_slf4j_impl)
     testImplementation(Libs.log4j_kotlin)
     testImplementation(Libs.kotlinx_coroutines_core)

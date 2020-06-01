@@ -25,9 +25,9 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
                     val instancePath = "$rootPath/services/$it"
                     val nodeData = Marshaller.unmarshall(
                             testingServer.client.data.forPath(instancePath).toString(Charsets.UTF_8),
-                            object : TypeReference<LockData>() {}
+                            LockData::class.java
                     )
-                    val instanceIdData = Marshaller.unmarshall(nodeData.data, object : TypeReference<InstanceIdData>() {})
+                    val instanceIdData = Marshaller.unmarshall(nodeData.metadata, InstanceIdData::class.java)
                     instanceIdData to it
                 }
                 .map { it.first.applicationName to it.second }
@@ -40,10 +40,10 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
         val instancePath = "$rootPath/services/$instanceId"
         val nodeData = Marshaller.unmarshall(
                 testingServer.createClient().data.forPath(instancePath).toString(Charsets.UTF_8),
-                object : TypeReference<LockData>() {}
+                LockData::class.java
         )
         val now = Instant.now()
-        return nodeData.expirationDate + disconnectTimeout < now
+        return nodeData.expirationTimestamp + disconnectTimeout < now
     }
 
     protected fun assertInstanceIdMapping(instances: Set<Pair<ServiceInstanceIdRegistry, String>>) {

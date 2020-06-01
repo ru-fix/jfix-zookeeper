@@ -4,7 +4,6 @@ import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldBeNull
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.apache.curator.framework.state.ConnectionState
 import org.apache.curator.framework.state.ConnectionStateListener
@@ -22,10 +21,13 @@ import org.netcrusher.tcp.TcpCrusherBuilder
 import ru.fix.stdlib.socket.SocketChecker
 import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock.ReleaseResult
 import ru.fix.zookeeper.testing.ZKTestingServer
+import ru.fix.zookeeper.utils.Marshaller
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit.MINUTES
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
@@ -88,10 +90,10 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `acquired lock isAcquired, released lock is not Acquired`(){
+    fun `acquired lock isAcquired, released lock is not Acquired`() {
         val lock = createLock()
         lock.expirableAcquire(Duration.ofSeconds(100), Duration.ofSeconds(2)).shouldBeTrue()
-        lock.state.apply{
+        lock.state.apply {
             isExpired.shouldBeFalse()
             isOwn.shouldBeTrue()
         }
@@ -192,7 +194,7 @@ internal class PersistentExpiringDistributedLockTest {
     fun `expired lock is released with EXPIRED status`() {
         val lock1 = createLock()
         lock1.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1)).shouldBeTrue()
-        await().until { lock1.getState().isExpired }
+        await().atMost(1, MINUTES).until { lock1.getState().isExpired }
         lock1.release().apply {
             status.shouldBe(ReleaseResult.Status.LOCK_STILL_OWNED_BUT_EXPIRED)
             exception.shouldBeNull()
@@ -249,7 +251,7 @@ internal class PersistentExpiringDistributedLockTest {
 
 
         await().atMost(1, MINUTES).until {
-            lock2.state.run { isExpired && !isOwn }
+            lock2.state.run { isExpired }
         }
         lock1.checkAndProlong(Duration.ofSeconds(10)).shouldBeFalse()
     }
@@ -259,13 +261,9 @@ internal class PersistentExpiringDistributedLockTest {
         val lock1 = createLock()
         lock1.expirableAcquire(Duration.ofMillis(1), Duration.ofSeconds(10)).shouldBeTrue()
 
-        logger.info(ZkTreePrinter(zkServer.client).print("/", true))
-
         await().atMost(10, SECONDS).until {
-            !lock1.state.isExpired
+            lock1.state.isExpired
         }
-
-        logger.info(ZkTreePrinter(zkServer.client).print("/", true))
 
         lock1.checkAndProlong(Duration.ofSeconds(10)).shouldBeTrue()
     }
@@ -363,7 +361,7 @@ internal class PersistentExpiringDistributedLockTest {
         }
         val id = idSequence.get()
         val lock = createLock(id = id)
-        lock.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1))
+        lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMinutes(1))
 
         val lockData = zkServer.client.data.forPath("$LOCKS_PATH/$id").toString(StandardCharsets.UTF_8)
         lockData.shouldContain(hostIp)
@@ -372,5 +370,21 @@ internal class PersistentExpiringDistributedLockTest {
             status.shouldBe(ReleaseResult.Status.LOCK_RELEASED)
             exception.shouldBeNull()
         }
+    }
+
+    @Test
+    fun `lock data serialized and deserialized as a json`() {
+
+        val lockData = LockData(ip = "1.2.3.4",
+                hostname = "hostName",
+                uuid = "uuid",
+                expirationDate = Instant.now().truncatedTo(ChronoUnit.MILLIS))
+        val json = Marshaller.marshall(lockData)
+
+        json.shouldContain("hostName")
+        json.shouldContain("uui")
+
+        val deserialized = Marshaller.unmarshall(json, LockData::class.java)
+        deserialized.shouldBe(lockData)
     }
 }

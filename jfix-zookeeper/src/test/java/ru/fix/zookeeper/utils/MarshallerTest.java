@@ -38,7 +38,7 @@ public class MarshallerTest {
     @Test
     public void unmarshallLockData() throws IOException {
         String json = getJsonFromResource("lockData.json");
-        LockData lockData = Marshaller.unmarshall(json, new TypeReference<>() {});
+        LockData lockData = Marshaller.unmarshall(json, LockData.class);
         assertNotNull(lockData);
         assertEquals(lockData, this.lockData);
         logger.trace("Unmarshalling successfull.\n{}", lockData);

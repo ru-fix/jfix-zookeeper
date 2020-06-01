@@ -132,17 +132,17 @@ class ServiceInstanceIdRegistry(
             val path = "${config.serviceRegistrationPath}/$it"
             val lockData = Marshaller.unmarshall(
                     curatorFramework.data.forPath(path).toString(Charsets.UTF_8),
-                    object : TypeReference<LockData>() {}
-            )
-            if (lockData.data == null) {
+                    LockData::class.java)
+
+            if (lockData.metadata == null) {
                 return@ids
             }
-            val instanceIdData = Marshaller.unmarshall(lockData.data, object : TypeReference<InstanceIdData>() {})
+            val instanceIdData = Marshaller.unmarshall(lockData.metadata, InstanceIdData::class.java)
             if (instanceIdData.host != config.host || instanceIdData.port != config.port) {
                 return@ids
             }
 
-            if (lockData.expirationDate.plus(config.disconnectTimeout).isBefore(Instant.now())) {
+            if (lockData.expirationTimestamp.plus(config.disconnectTimeout).isBefore(Instant.now())) {
                 logger.info("Instance started with host=${config.host} and port=${config.port}, " +
                         "disconnection timeout=${config.disconnectTimeout} not reached. Instance got id=$it")
                 return it
@@ -156,9 +156,9 @@ class ServiceInstanceIdRegistry(
             logger.info("Client reconnected after connection issues")
             val lockData = Marshaller.unmarshall(
                     curatorFramework.data.forPath(instanceIdPath).toString(Charsets.UTF_8),
-                    object : TypeReference<LockData>() {}
+                    LockData::class.java
             )
-            when (lockData.data) {
+            when (lockData.metadata) {
                 null -> {
                     logger.warn("ServiceInstanceIdRegistry reconnected, " +
                             "but lock for its instance id=$instanceId not found.")

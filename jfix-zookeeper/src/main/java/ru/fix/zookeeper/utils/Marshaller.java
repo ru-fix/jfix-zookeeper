@@ -32,7 +32,7 @@ public class Marshaller {
         }
     }
 
-    public static <T> T unmarshall(String json, TypeReference<T> targetType) throws IOException {
+    public static <T> T unmarshall(String json, Class<T> targetType) throws IOException {
         try {
             return mapper.readValue(json, targetType);
         } catch (IOException ex) {

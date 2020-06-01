@@ -8,7 +8,8 @@ object Vers {
     const val nexus_publish_plugin = "0.4.0"
 
     //Dependencies
-    const val kotlin = "1.3.70"
+    const val kotlin = "1.3.72"
+    const val kotlin_gradle = "1.3.71"
     const val kotlin_coroutines = "1.3.5"
     const val jackson = "2.10.3"
     const val apache_curator = "4.3.0"
@@ -30,6 +31,9 @@ object Libs {
     const val nexus_publish_plugin = "de.marcphilipp.nexus-publish"
 
     //Dependencies
+    const val gradle_kotlin_stdlib = "org.jetbrains.kotlin:kotlin-stdlib:${Vers.kotlin_gradle}"
+    const val gradle_kotlin_jdk8 = "org.jetbrains.kotlin:kotlin-stdlib-jdk8:${Vers.kotlin_gradle}"
+
     const val kotlin_stdlib = "org.jetbrains.kotlin:kotlin-stdlib:${Vers.kotlin}"
     const val kotlin_jdk8 = "org.jetbrains.kotlin:kotlin-stdlib-jdk8:${Vers.kotlin}"
     const val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"

@@ -184,10 +184,9 @@ internal class PersistentExpiringDistributedLockTest {
     @Test
     fun `killing locks parent node in zk leads to failed release`() {
         val id = idSequence.get()
-        val lock = createLock(path = "$LOCKS_PATH-$id/$id")
+        val lock = createLock(path = "/path-that-dies/sub-dir/$id")
         lock.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1))
-        zkServer.client.delete().forPath("$LOCKS_PATH-$id/$id")
-        zkServer.client.delete().forPath("$LOCKS_PATH-$id")
+        zkServer.client.delete().deletingChildrenIfNeeded().forPath("/path-that-dies")
 
         lock.release().apply {
             status.shouldBe(ReleaseResult.Status.LOCK_IS_LOST)

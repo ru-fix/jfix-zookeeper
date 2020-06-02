@@ -128,7 +128,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     ) throws Exception {
         assertState();
 
-        final Instant startTime = Instant.now();
+        final Instant startAcquiringTime = Instant.now();
         lockWatcher.clearEvents();
 
         while (true) { /* main loop */
@@ -157,93 +157,94 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
                     expirationDate = newExpirationDate;
                     return true;
+
                 } catch (KeeperException.NodeExistsException e) {
                     logger.debug("Node already exist", e);
+
+                    /*
+                     * if node already exist then continue with main loop
+                     */
                 }
-                /*
-                 * if node already exist then continue with main loop
-                 */
-                continue;
 
             } else {
                 /*
                  * lock node exist
                  */
-                LockData lockData;
+                LockData lockData = null;
                 try {
                     lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
                 } catch (KeeperException.NoNodeException e) {
                     logger.debug("Node was removed by another actor between check exist and node data getting.", e);
-                    return false;
                 }
 
-                if (lockData.isExpired()) {
+                if (lockData != null) {
                     /*
-                     * lock expired
+                     * lock node exist and successfuly read
                      */
-                    if (zkTxUpdateLockData(acquirePeriod, nodeStat)) {
-                        return true;
-                    }
-
-                    /* tx failed, continue with main loop*/
-                    continue;
-                } else {
-                    /*
-                     * lock active, check owner
-                     */
-                    if (lockData.isOwnedBy(uuid)) {
+                    if (lockData.isExpired()) {
                         /*
-                         * we last lock owner
+                         * lock expired
                          */
                         if (zkTxUpdateLockData(acquirePeriod, nodeStat)) {
                             return true;
                         }
-                        /* tx failed, continue with main loop */
-                        continue;
 
+                        /* tx failed, continue with main loop*/
                     } else {
                         /*
-                         * we are not last lock owner
+                         * lock active, check owner
                          */
+                        if (lockData.isOwnedBy(uuid)) {
+                            /*
+                             * we are the last lock owner
+                             */
+                            if (zkTxUpdateLockData(acquirePeriod, nodeStat)) {
+                                return true;
+                            }
+                            /* tx failed, continue with main loop */
 
-                        /* lock expired after */
-                        long alienLockTTL = Math.max(0, lockData.getExpirationTimestamp().toEpochMilli() - Instant.now().toEpochMilli());
+                        } else {
+                            /*
+                             * we are not last lock owner
+                             */
 
-                        /* acquiring try time expired after */
-                        long acquiringTryTTL = Math.max(
-                                0,
-                                startTime.toEpochMilli() + acquiringTimeout.toMillis() - Instant.now().toEpochMilli());
+                            /* lock expired after */
+                            long alienLockTTL = Math.max(0, lockData.getExpirationTimestamp().toEpochMilli() - Instant.now().toEpochMilli());
 
-                        long waitTime = Math.min(alienLockTTL, acquiringTryTTL);
+                            /* acquiring try time expired after */
+                            long acquiringTryTTL = Math.max(
+                                    0,
+                                    startAcquiringTime.toEpochMilli() + acquiringTimeout.toMillis() - Instant.now().toEpochMilli());
 
-                        if (waitTime > 0) {
-                            final OffsetDateTime preWaitingTimeSnapshot = OffsetDateTime.now(ZoneOffset.UTC);
-                            logger.debug(
-                                    "Can't acquire lock={}. Lock expiration time: '{}', " +
-                                            "current time: '{}'. Acquiring will be paused on {} ms",
-                                    Marshaller.marshall(lockId), lockData.getExpirationTimestamp(),
-                                    preWaitingTimeSnapshot, waitTime
-                            );
+                            long waitTime = Math.min(alienLockTTL, acquiringTryTTL);
 
-                            // Wait in hope that lock will be released by current owner
-                            lockWatcher.waitForEventsAndReset(waitTime, TimeUnit.MILLISECONDS);
+                            if (waitTime > 0) {
+                                final OffsetDateTime preWaitingTimeSnapshot = OffsetDateTime.now(ZoneOffset.UTC);
+                                logger.debug(
+                                        "Can't acquire lock={}. Lock expiration time: '{}', " +
+                                                "current time: '{}'. Acquiring will be paused on {} ms",
+                                        Marshaller.marshall(lockId), lockData.getExpirationTimestamp(),
+                                        preWaitingTimeSnapshot, waitTime
+                                );
 
-                            final Duration logWaitingTime = Duration.between(
-                                    preWaitingTimeSnapshot, OffsetDateTime.now(ZoneOffset.UTC)
-                            );
-                            logger.debug(
-                                    "Actual waiting time for release lock {} is {}. Planned waiting time is {}ms.",
-                                    Marshaller.marshall(lockId), logWaitingTime, waitTime
-                            );
+                                // Wait in hope that lock will be released by current owner
+                                lockWatcher.waitForEventsAndReset(waitTime, TimeUnit.MILLISECONDS);
+
+                                final Duration logWaitingTime = Duration.between(
+                                        preWaitingTimeSnapshot, OffsetDateTime.now(ZoneOffset.UTC)
+                                );
+                                logger.debug(
+                                        "Actual waiting time for release lock {} is {}. Planned waiting time is {}ms.",
+                                        Marshaller.marshall(lockId), logWaitingTime, waitTime
+                                );
+                            }
+                            /* continue with main loop */
                         }
-
-                        /* continue with main loop */
-
                     }
                 }
             }
 
-            final Duration actualAcquiringTime = Duration.between(startTime, Instant.now());
+            final Duration actualAcquiringTime = Duration.between(startAcquiringTime, Instant.now());
             /* check if acquiring try time expired */
             if (actualAcquiringTime.compareTo(acquiringTimeout) > 0) {
                 logger.debug(
@@ -418,16 +419,15 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     @Override
     public void close() {
-        if(!isClosed.compareAndExchange(false, true))
-            return;
-
         try {
             release();
         } catch (Exception exception) {
             logger.error("Failed to close lock {}", lockId, exception);
 
         } finally {
-            lockWatcher.close();
+            if (isClosed.compareAndExchange(false, true) == false) {
+                lockWatcher.close();
+            }
         }
     }
 

@@ -130,10 +130,10 @@ internal class PersistentExpiringDistributedLockTest {
         val lock1 = createLock(id)
         val lock2 = createLock(id)
 
-        lock1.expirableAcquire(Duration.ofMinutes(1), Duration.ofMinutes(1)).shouldBeTrue()
-        lock2.expirableAcquire(Duration.ofMinutes(1), Duration.ofMinutes(1)).shouldBeFalse()
+        lock1.expirableAcquire(Duration.ofMinutes(1), Duration.ofSeconds(1)).shouldBeTrue()
+        lock2.expirableAcquire(Duration.ofMinutes(1), Duration.ofSeconds(1)).shouldBeFalse()
         lock1.close()
-        lock2.expirableAcquire(Duration.ofMillis(1), Duration.ofMinutes(1)).shouldBeTrue()
+        lock2.expirableAcquire(Duration.ofMinutes(1), Duration.ofSeconds(1)).shouldBeTrue()
         lock2.close()
     }
 

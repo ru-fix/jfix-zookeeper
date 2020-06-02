@@ -41,7 +41,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             this.prolongationListener = prolongationListener;
         }
 
-        public PersistentExpiringDistributedLock.ReleaseResult release() {
+        public PersistentExpiringDistributedLock.ReleaseResult release() throws Exception {
             return this.lock.release();
         }
 
@@ -122,22 +122,25 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             logger.error("Illegal state. Persistent lock for lockId={} doesn't exist.", Marshaller.marshall(lockId));
             return;
         }
-
-        var releaseResult = persistentLockContainer.release();
-        switch (releaseResult.getStatus()) {
-            case LOCK_IS_LOST:
-                logger.warn("Lock " + lockId + " is lost");
-            case LOCK_RELEASED:
-                locks.remove(lockId);
-                persistentLockContainer.close();
-                break;
-            case LOCK_STILL_OWNED_BUT_EXPIRED:
-                logger.warn("Lock " + lockId + "tried to be release but already expired");
-                break;
-            case FAILURE:
-                logger.error("Failed to release lock: "+ lockId, releaseResult.getException());
-            default:
-                throw new IllegalStateException("" + releaseResult.getStatus());
+        try {
+            var releaseResult = persistentLockContainer.release();
+            switch (releaseResult) {
+                case LOCK_IS_LOST:
+                    logger.warn("Lock " + lockId + " is lost");
+                case LOCK_RELEASED:
+                    locks.remove(lockId);
+                    persistentLockContainer.close();
+                    break;
+                case LOCK_STILL_OWNED_BUT_EXPIRED:
+                    logger.warn("Lock " + lockId + "tried to be release but already expired");
+                    break;
+                default:
+                    throw new IllegalStateException("" + releaseResult);
+            }
+        } catch (Exception exception) {
+            locks.remove(lockId);
+            persistentLockContainer.close();
+            logger.error("Failed to release lock: "+ lockId, exception);
         }
     }
 

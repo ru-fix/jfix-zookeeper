@@ -20,6 +20,7 @@ import java.time.ZoneOffset;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Lock uses persistent zk nodes.
@@ -55,7 +56,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         }
     }
 
-    private static final class LockWatcher implements AutoCloseable{
+    private static final class LockWatcher implements AutoCloseable {
         private final NodeCache lockNodeCache;
         private final Semaphore lockNodeStateChanged = new Semaphore(0);
         private final LockIdentity lockId;
@@ -71,13 +72,13 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             lockNodeStateChanged.drainPermits();
         }
 
-        public void waitForEventsAndReset(long maxWaitTime, TimeUnit timeUnit) throws InterruptedException{
+        public void waitForEventsAndReset(long maxWaitTime, TimeUnit timeUnit) throws InterruptedException {
             lockNodeStateChanged.tryAcquire(maxWaitTime, timeUnit);
             lockNodeStateChanged.drainPermits();
         }
 
         @Override
-        public void close(){
+        public void close() {
             try {
                 lockNodeCache.close();
             } catch (Exception exception) {
@@ -94,6 +95,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     private final String uuid;
     private volatile Instant expirationDate;
     private final LockWatcher lockWatcher;
+    private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
     /**
      * @param curatorFramework CuratorFramework
@@ -124,6 +126,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             @NotNull Duration acquirePeriod,
             @NotNull Duration acquiringTimeout
     ) throws Exception {
+        assertState();
+
         final Instant startTime = Instant.now();
         lockWatcher.clearEvents();
 
@@ -144,9 +148,9 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                     Instant newExpirationDate = Instant.now().plus(acquirePeriod);
                     LockData lockData = new LockData(
                             uuid,
-                            newExpirationDate, 
+                            newExpirationDate,
                             lockId.getMetadata());
-                    
+
                     curatorFramework.create()
                             .creatingParentContainersIfNeeded()
                             .forPath(lockId.getNodePath(), encodeLockData(lockData));
@@ -253,6 +257,12 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         }
     }
 
+    private void assertState() {
+        if (isClosed.get()) {
+            throw new IllegalStateException("Lock " + lockId + " already closed");
+        }
+    }
+
     /**
      * @param acquirePeriod time to hold lock
      * @param nodeStat      lock's node stat
@@ -295,6 +305,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      * @throws Exception ZK errors, connection interruptions
      */
     public boolean checkAndProlong(Duration prolongationPeriod) throws Exception {
+        assertState();
+
         Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
@@ -312,6 +324,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      * Check if lock is not expired and in acquired state.
      */
     public State getState() throws Exception {
+        assertState();
+
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
             return new State(
@@ -322,51 +336,33 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         }
     }
 
-    final static class ReleaseResult {
-        enum Status {
-            /**
-             * Lock was owned and not expired, lock successful released
-             */
-            LOCK_RELEASED,
-            /**
-             * Lock is still owned but already expired, no operation performed
-             */
-            LOCK_STILL_OWNED_BUT_EXPIRED,
-            /**
-             * Lock is not owned or absent
-             */
-            LOCK_IS_LOST,
-            /**
-             * Network or other failure, see exception for details
-             */
-            FAILURE
-        }
-
-        private final Status status;
-        private final Exception exception;
-
-        private ReleaseResult(Status status, Exception exception) {
-            this.status = status;
-            this.exception = exception;
-        }
-
-        public Status getStatus() {
-            return status;
-        }
-
-        public Exception getException() {
-            return exception;
-        }
+    enum ReleaseResult {
+        /**
+         * Lock was owned and not expired, lock successful released
+         */
+        LOCK_RELEASED,
+        /**
+         * Lock is still owned but already expired, no operation performed
+         */
+        LOCK_STILL_OWNED_BUT_EXPIRED,
+        /**
+         * Lock is not owned or absent
+         */
+        LOCK_IS_LOST,
     }
+
 
     /**
      * Releases the lock. Has no effect if lock expired, removed or lock is owned by others.
+     *
+     * @throws Exception in case of connection or ZK errors
      */
-    public ReleaseResult release() {
+    public ReleaseResult release() throws Exception {
+        assertState();
         try {
             Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
             if (nodeStat == null) {
-                return new ReleaseResult(ReleaseResult.Status.LOCK_IS_LOST, null);
+                return ReleaseResult.LOCK_IS_LOST;
             }
 
             LockData lockData;
@@ -374,16 +370,16 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                 lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
             } catch (KeeperException.NoNodeException e) {
                 logger.debug("Node already removed on release.", e);
-                return new ReleaseResult(ReleaseResult.Status.LOCK_IS_LOST, null);
+                return ReleaseResult.LOCK_IS_LOST;
             }
 
             // check if we are owner of the lock
             if (!lockData.isOwnedBy(uuid)) {
-                return new ReleaseResult(ReleaseResult.Status.LOCK_IS_LOST, null);
+                return ReleaseResult.LOCK_IS_LOST;
             }
 
             if (lockData.isExpired()) {
-                return new ReleaseResult(ReleaseResult.Status.LOCK_STILL_OWNED_BUT_EXPIRED, null);
+                return ReleaseResult.LOCK_STILL_OWNED_BUT_EXPIRED;
             }
 
             try {
@@ -393,11 +389,11 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                         .commit();
 
                 logger.trace("The lock={} has been released", Marshaller.marshall(lockId));
-                return new ReleaseResult(ReleaseResult.Status.LOCK_RELEASED, null);
+                return ReleaseResult.LOCK_RELEASED;
 
             } catch (KeeperException.NoNodeException | KeeperException.BadVersionException e) {
                 logger.debug("Node={} already released.", Marshaller.marshall(lockId), e);
-                return new ReleaseResult(ReleaseResult.Status.LOCK_IS_LOST, null);
+                return ReleaseResult.LOCK_IS_LOST;
             } finally {
                 expirationDate = Instant.ofEpochMilli(0);
             }
@@ -408,7 +404,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                     "Failed to release PersistentExpiringDistributedLock with lockId={}",
                     Marshaller.marshall(lockId), e
             );
-            return new ReleaseResult(ReleaseResult.Status.FAILURE, e);
+            throw e;
         }
     }
 
@@ -422,12 +418,19 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     @Override
     public void close() {
+        if(!isClosed.compareAndExchange(false, true))
+            return;
+
         try {
             release();
+        } catch (Exception exception) {
+            logger.error("Failed to close lock {}", lockId, exception);
+
         } finally {
             lockWatcher.close();
         }
     }
+
     /**
      * PersistentLock always keeps timestamp than indicates end of life.
      * After this timestamp lock is expired.
@@ -451,6 +454,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             Duration prolongationPeriod,
             Duration expirationPeriod
     ) throws Exception {
+        assertState();
+
         if (expirationDate.isBefore(Instant.now().plus(expirationPeriod))) {
             return checkAndProlong(prolongationPeriod);
         } else {

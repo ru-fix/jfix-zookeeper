@@ -12,7 +12,6 @@ import ru.fix.zookeeper.utils.Marshaller;
 
 import javax.annotation.concurrent.NotThreadSafe;
 import java.io.IOException;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -56,18 +55,45 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         }
     }
 
+    private static final class LockWatcher implements AutoCloseable{
+        private final NodeCache lockNodeCache;
+        private final Semaphore lockNodeStateChanged = new Semaphore(0);
+        private final LockIdentity lockId;
+
+        public LockWatcher(CuratorFramework curatorFramework, LockIdentity lockId) throws Exception {
+            this.lockId = lockId;
+            lockNodeCache = new NodeCache(curatorFramework, lockId.getNodePath());
+            lockNodeCache.getListenable().addListener(lockNodeStateChanged::release);
+            lockNodeCache.start(true);
+        }
+
+        public void clearEvents() {
+            lockNodeStateChanged.drainPermits();
+        }
+
+        public void waitForEventsAndReset(long maxWaitTime, TimeUnit timeUnit) throws InterruptedException{
+            lockNodeStateChanged.tryAcquire(maxWaitTime, timeUnit);
+            lockNodeStateChanged.drainPermits();
+        }
+
+        @Override
+        public void close(){
+            try {
+                lockNodeCache.close();
+            } catch (Exception exception) {
+                logger.error("Failed to close NodeCashe on lock " + lockId.getNodePath(), exception);
+            }
+        }
+    }
 
     private static final Logger logger = LoggerFactory.getLogger(PersistentExpiringDistributedLock.class);
-    private static final Charset charset = StandardCharsets.UTF_8;
+
 
     private final CuratorFramework curatorFramework;
     private final LockIdentity lockId;
     private volatile String version;
-
-    private final Semaphore lockNodeStateChanged = new Semaphore(0);
-
-    private final NodeCache nodeCache;
     private volatile Instant expirationDate;
+    private final LockWatcher lockWatcher;
 
     /**
      * @param curatorFramework CuratorFramework
@@ -79,15 +105,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     ) throws Exception {
         this.curatorFramework = curatorFramework;
         this.lockId = lockId;
-        this.nodeCache = new NodeCache(curatorFramework, lockId.getNodePath());
         this.version = UUID.randomUUID().toString();
-
-        init();
-    }
-
-    private void init() throws Exception {
-        nodeCache.getListenable().addListener(lockNodeStateChanged::release);
-        nodeCache.start(true);
+        this.lockWatcher = new LockWatcher(curatorFramework, lockId);
     }
 
     /**
@@ -106,10 +125,9 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             @NotNull Duration acquiringTimeout
     ) throws Exception {
         final Instant startTime = Instant.now();
-
+        lockWatcher.clearEvents();
 
         while (true) { /* main loop */
-
             /*
              * read lock data
              */
@@ -203,7 +221,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                             );
 
                             // Wait in hope that lock will be released by current owner
-                            lockNodeStateChanged.tryAcquire(waitTime, TimeUnit.MILLISECONDS);
+                            lockWatcher.waitForEventsAndReset(waitTime, TimeUnit.MILLISECONDS);
+
 
                             final Duration logWaitingTime = Duration.between(
                                     preWaitingTimeSnapshot, OffsetDateTime.now(ZoneOffset.UTC)
@@ -246,13 +265,15 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             version = UUID.randomUUID().toString();
             LockData lockData = new LockData(version, nextExpirationDate, lockId.getData());
 
-            curatorFramework.inTransaction()
-                    .check().withVersion(nodeStat.getVersion()).forPath(lockId.getNodePath()).and()
-                    .setData().forPath(lockId.getNodePath(), encodeLockData(lockData)).and().commit();
+            TransactionalClient.createTransaction(curatorFramework)
+                    .checkPathWithVersion(lockId.getNodePath(), nodeStat.getVersion())
+                    .setData(lockId.getNodePath(), encodeLockData(lockData))
+                    .commit();
+
             expirationDate = nextExpirationDate;
             return true;
         } catch (KeeperException.BadVersionException | KeeperException.NoNodeException e) {
-            logger.debug("Lock already acquired/modified", e);
+            logger.debug("Lock {} already acquired/modified", lockId, e);
         }
         return false;
     }
@@ -357,8 +378,6 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                 return new ReleaseResult(ReleaseResult.Status.LOCK_IS_LOST, null);
             }
 
-            //TODO: delete in transaction with version
-
             // check if we are owner of the lock
             if (!version.equals(lockData.getVersion())) {
                 return new ReleaseResult(ReleaseResult.Status.LOCK_IS_LOST, null);
@@ -395,11 +414,11 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     }
 
     private byte[] encodeLockData(LockData lockData) {
-        return Marshaller.marshall(lockData).getBytes(charset);
+        return Marshaller.marshall(lockData).getBytes(StandardCharsets.UTF_8);
     }
 
     private LockData decodeLockData(byte[] content) throws IOException {
-        return Marshaller.unmarshall(new String(content, charset), LockData.class);
+        return Marshaller.unmarshall(new String(content, StandardCharsets.UTF_8), LockData.class);
     }
 
     @Override
@@ -407,14 +426,9 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         try {
             release();
         } finally {
-            try {
-                nodeCache.close();
-            } catch (Exception exception) {
-                logger.error("Failed to close nodeCashe on lock " + lockId.getNodePath(), exception);
-            }
+            lockWatcher.close();
         }
     }
-
     /**
      * PersistentLock always keeps timestamp than indicates end of life.
      * After this timestamp lock is expired.
@@ -444,5 +458,4 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             return true;
         }
     }
-
 }

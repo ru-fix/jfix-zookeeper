@@ -5,10 +5,9 @@ import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.net.UnknownHostException
 import java.time.Instant
-import java.time.OffsetDateTime
 
 data class LockData(
-        val version: String,
+        val uuid: String,
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern ="yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
         val expirationTimestamp: Instant,
         val metadata: String? = null
@@ -48,7 +47,7 @@ data class LockData(
     }
 
     @JsonIgnore
-    fun isOwnedBy(version: String): Boolean {
-        return this.version == version
+    fun isOwnedBy(uuid: String): Boolean {
+        return this.uuid == uuid
     }
 }

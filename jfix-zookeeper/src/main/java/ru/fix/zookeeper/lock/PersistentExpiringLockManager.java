@@ -146,12 +146,12 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             PersistentExpiringDistributedLock lock
     ) {
         try {
-            logger.info("Method checkAndProlong lockId={}", lockId.getId());
+            logger.info("Method checkAndProlong lockId={}", lockId);
             return lock.checkAndProlongIfExpiresIn(
                     config.get().getReservationPeriod(), config.get().getExpirationPeriod()
             );
         } catch (Exception e) {
-            logger.error("Failed to checkAndProlong persistent locks with lockId {}", Marshaller.marshall(lockId), e);
+            logger.error("Failed to checkAndProlong persistent locks with lockId {}", lockId, e);
             return false;
         }
     }

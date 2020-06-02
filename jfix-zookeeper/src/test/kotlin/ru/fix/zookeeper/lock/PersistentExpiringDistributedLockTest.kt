@@ -52,9 +52,7 @@ internal class PersistentExpiringDistributedLockTest {
                    data: String? = null): PersistentExpiringDistributedLock {
         return PersistentExpiringDistributedLock(
                 zkServer.client,
-                LockIdentity(id,
-                        path,
-                        data))
+                LockIdentity(path, data))
     }
 
     @BeforeAll
@@ -74,9 +72,7 @@ internal class PersistentExpiringDistributedLockTest {
         val id = idSequence.get()
         val lock = PersistentExpiringDistributedLock(
                 zkServer.client,
-                LockIdentity(id,
-                        "$LOCKS_PATH/$id",
-                        data = null))
+                LockIdentity("$LOCKS_PATH/$id"))
 
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
 
@@ -84,7 +80,7 @@ internal class PersistentExpiringDistributedLockTest {
 
         val data = zkServer.client.data.forPath("$LOCKS_PATH/$id").toString(StandardCharsets.UTF_8)
         logger.info(data)
-        data.shouldContain("version")
+        data.shouldContain("uuid")
 
         lock.close()
     }
@@ -341,13 +337,13 @@ internal class PersistentExpiringDistributedLockTest {
         })
 
         val id = idSequence.get()
-        val lock1 = PersistentExpiringDistributedLock(zkProxyClient, LockIdentity(id, "$LOCKS_PATH/$id"))
+        val lock1 = PersistentExpiringDistributedLock(zkProxyClient, LockIdentity("$LOCKS_PATH/$id"))
         lock1.expirableAcquire(Duration.ofSeconds(100), Duration.ofSeconds(1)).shouldBeTrue()
 
         networkFailure.activate(proxyTcpCrusher)
         await().atMost(10, MINUTES).until { zkProxyState.get() == ConnectionState.LOST }
 
-        val lock2 = PersistentExpiringDistributedLock(zkServer.client, LockIdentity(id, "$LOCKS_PATH/$id"))
+        val lock2 = PersistentExpiringDistributedLock(zkServer.client, LockIdentity( "$LOCKS_PATH/$id"))
         lock2.expirableAcquire(Duration.ofMillis(100), Duration.ofMillis(100)).shouldBeFalse()
         lock2.close()
 

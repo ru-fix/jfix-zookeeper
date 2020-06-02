@@ -96,7 +96,7 @@ class ServiceInstanceIdRegistry(
 
             val instanceIdPath = "${config.serviceRegistrationPath}/$preparedInstanceId"
             val instanceIdData = InstanceIdData(config.serviceName, Instant.now(), host = config.host, port = config.port)
-            val lockIdentity = LockIdentity(preparedInstanceId, instanceIdPath, Marshaller.marshall(instanceIdData))
+            val lockIdentity = LockIdentity(instanceIdPath, Marshaller.marshall(instanceIdData))
 
             val result = lockManager.tryAcquire(lockIdentity) { lock ->
                 logger.debug("Failed to initialize service id registry and generate instance id. " +

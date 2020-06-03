@@ -7,7 +7,7 @@ import org.apache.zookeeper.data.Stat;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.fix.zookeeper.transactional.TransactionalClient;
+import ru.fix.zookeeper.transactional.ZkTransaction;
 import ru.fix.zookeeper.utils.Marshaller;
 
 import javax.annotation.concurrent.NotThreadSafe;
@@ -275,7 +275,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             Instant nextExpirationTimestamp = Instant.now().plus(acquirePeriod);
             LockData lockData = new LockData(uuid, nextExpirationTimestamp, lockId.getMetadata());
 
-            TransactionalClient.createTransaction(curatorFramework)
+            ZkTransaction.createTransaction(curatorFramework)
                     .checkPathWithVersion(lockId.getNodePath(), nodeStat.getVersion())
                     .setData(lockId.getNodePath(), encodeLockData(lockData))
                     .commit();
@@ -384,7 +384,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             }
 
             try {
-                TransactionalClient.createTransaction(curatorFramework)
+                ZkTransaction.createTransaction(curatorFramework)
                         .checkPathWithVersion(lockId.getNodePath(), nodeStat.getVersion())
                         .deletePath(lockId.getNodePath())
                         .commit();

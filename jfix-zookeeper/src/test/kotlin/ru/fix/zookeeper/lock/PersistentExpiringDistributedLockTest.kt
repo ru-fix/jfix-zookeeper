@@ -494,9 +494,16 @@ internal class PersistentExpiringDistributedLockTest {
     fun `garbage in zk lock node ignored and overwritten during acquiring`(){
         val id = idSequence.get()
         val path = lockPath(id)
-        val lock = createLock(id = id)
+
+        createLock(id).use {
+            it.expirableAcquire(Duration.ofMillis(1), Duration.ofSeconds(10))
+            await().atMost(Duration.ofMinutes(1)).until{
+                it.state.isExpired
+            }
+        }
 
         zkServer.client.setData().forPath(path, "asdf#fljs;d".toByteArray())
+        val lock = createLock(id = id)
         lock.expirableAcquire(Duration.ofSeconds(10), Duration.ofSeconds(10)).shouldBeTrue()
     }
 
@@ -507,6 +514,7 @@ internal class PersistentExpiringDistributedLockTest {
         val lock = createLock(id = id)
 
         lock.expirableAcquire(Duration.ofSeconds(10), Duration.ofSeconds(10)).shouldBeTrue()
+
         zkServer.client.setData().forPath(path, "{\"dsa\":32}".toByteArray())
         lock.checkAndProlong(Duration.ofSeconds(10)).shouldBeFalse()
     }
@@ -519,6 +527,7 @@ internal class PersistentExpiringDistributedLockTest {
 
         lock.expirableAcquire(Duration.ofSeconds(10), Duration.ofSeconds(10)).shouldBeTrue()
         zkServer.client.setData().forPath(path, "asdf#fljs;d".toByteArray())
+
         lock.release().shouldBe(ReleaseResult.LOCK_IS_LOST)
     }
 }

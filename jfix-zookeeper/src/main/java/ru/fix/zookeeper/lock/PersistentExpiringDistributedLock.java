@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -414,7 +415,12 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     }
 
     private LockData decodeLockData(byte[] content) throws IOException {
-        return Marshaller.unmarshall(new String(content, StandardCharsets.UTF_8), LockData.class);
+        try {
+            return Marshaller.unmarshall(new String(content, StandardCharsets.UTF_8), LockData.class);
+        } catch (Exception exception) {
+            logger.warn("Found inconsistent data inside lock node {}", lockId, exception);
+            return new LockData("", "", "", Instant.ofEpochMilli(0));
+        }
     }
 
     @Override

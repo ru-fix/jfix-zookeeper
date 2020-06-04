@@ -1,12 +1,13 @@
 package ru.fix.zookeeper.transactional;
 
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.framework.api.transaction.*;
+import org.apache.curator.framework.api.transaction.CuratorOp;
+import org.apache.curator.framework.api.transaction.CuratorTransactionResult;
 import org.apache.zookeeper.CreateMode;
-import ru.fix.zookeeper.transactional.impl.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -24,6 +25,7 @@ import java.util.Objects;
  * </pre>
  */
 public class ZkTransaction {
+    private final static Logger logger = LoggerFactory.getLogger(ZkTransaction.class);
 
     @FunctionalInterface
     public interface TransactionCreator {
@@ -115,35 +117,50 @@ public class ZkTransaction {
     }
 
 
+    /**
+     * @param curatorFramework {@link CuratorFramework}
+     * @param times            How many times to retry
+     * @param inTransaction    transaction operations
+     * @return list or operation results in case of success
+     * @throws Exception last retry exception in case of failure
+     */
     public static List<CuratorTransactionResult> tryCommit(
             CuratorFramework curatorFramework,
             int times,
-            TransactionCreator transactionCreator
+            TransactionCreator inTransaction
     ) throws Exception {
-        return tryCommit(curatorFramework, times, transactionCreator, e -> {
-            throw e;
+        return tryCommit(curatorFramework, times, inTransaction, exc -> {
         });
     }
 
+    /**
+     * @param curatorFramework {@link CuratorFramework}
+     * @param times            How many times to retry
+     * @param inTransaction    transaction operations
+     * @param onError          Callback that will be invoked for each failed retry
+     * @return list or operation results in case of success
+     * @throws Exception last retry exception in case of failure
+     */
     public static List<CuratorTransactionResult> tryCommit(
-            CuratorFramework client,
+            CuratorFramework curatorFramework,
             int times,
             TransactionCreator inTransaction,
             TransactionCreationErrorHandler onError
     ) throws Exception {
         for (int i = 0; i < times; i++) {
             try {
-                ZkTransaction transaction = createTransaction(client);
+                ZkTransaction transaction = createTransaction(curatorFramework);
                 inTransaction.fillTransaction(transaction);
                 return transaction.commit();
-            } catch (Exception e) {
+            } catch (Exception exc) {
+                logger.debug("Failed to commit transaction on retry {}", i, exc);
+                onError.onError(exc);
                 if (i == times - 1) {
-                    onError.onError(e);
+                    throw exc;
                 }
             }
         }
-        //TODO fix api
-        return Collections.emptyList();
+        throw new IllegalStateException();
     }
 
     public List<CuratorTransactionResult> commit() throws Exception {

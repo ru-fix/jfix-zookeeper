@@ -1,10 +1,10 @@
-package ru.fix.zookeeper.transactional.impl;
+package ru.fix.zookeeper.transactional;
 
 import org.apache.curator.framework.api.transaction.CuratorOp;
 
 import java.util.List;
 
-public interface Operation {
+interface Operation {
 
     /**
      * @param operationsContext  local operations context

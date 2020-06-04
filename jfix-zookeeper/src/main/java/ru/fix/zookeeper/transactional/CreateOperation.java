@@ -1,4 +1,4 @@
-package ru.fix.zookeeper.transactional.impl;
+package ru.fix.zookeeper.transactional;
 
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.transaction.CuratorOp;
@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 
-public class CreateOperation implements Operation{
+class CreateOperation implements Operation{
 
     private final Logger logger = LoggerFactory.getLogger(CreateOperation.class);
 

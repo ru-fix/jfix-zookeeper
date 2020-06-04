@@ -1,6 +1,5 @@
 package ru.fix.zookeeper.lock
 
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -28,7 +27,7 @@ internal class PersistentExpiringLockManagerTest {
 
     companion object {
         private val lastLockId = AtomicInteger(0)
-        fun nextLockId(): Int = lastLockId.incrementAndGet()
+        fun nextId(): Int = lastLockId.incrementAndGet()
 
         const val LOCK_PATH = "/locks"
     }
@@ -38,13 +37,13 @@ internal class PersistentExpiringLockManagerTest {
         zkServer = ZKTestingServer()
                 .withCloseOnJvmShutdown(true)
                 .start()
-        
+
         manager1 = createLockManager()
         manager2 = createLockManager()
     }
 
     @AfterEach
-    fun `close zk and managers`(){
+    fun `close zk and managers`() {
         manager1.close()
         manager2.close()
 
@@ -81,11 +80,10 @@ internal class PersistentExpiringLockManagerTest {
     }
 
     @Test
-    fun `acquiring already acquired lock leads to exception`() {
-        manager1.tryAcquire(createLockIdentity()) { fail() }.shouldBeTrue()
-        shouldThrow<IllegalStateException> {
-            manager1.tryAcquire(createLockIdentity()) { fail() }
-        }
+    fun `can not acquire already acquired lock`() {
+        val lockId = createLockIdentity()
+        manager1.tryAcquire(lockId) { fail() }.shouldBeTrue()
+        manager1.tryAcquire(lockId) { fail() }.shouldBeFalse()
     }
 
     @Test
@@ -99,7 +97,7 @@ internal class PersistentExpiringLockManagerTest {
 
     @Test
     fun `lock node created after acquiring and removed after releasing lock`() {
-        val lockId = LockIdentity("lock-1", "/locks/lock-1")
+        val lockId = LockIdentity("/lock-1", "/locks/lock-1")
         manager1.tryAcquire(lockId) { fail() }
 
         println("After acquiring lock: \n" + zkTree())
@@ -113,8 +111,8 @@ internal class PersistentExpiringLockManagerTest {
 
     @Test
     fun `locks nodes removed after close of zk client connection`() {
-        val lockId1 = LockIdentity("lock-1", "/locks/lock-1")
-        val lockId2 = LockIdentity("lock-2", "/locks/lock-2")
+        val lockId1 = LockIdentity("/lock-1", "/locks/lock-1")
+        val lockId2 = LockIdentity("/lock-2", "/locks/lock-2")
         manager1.tryAcquire(lockId1) { fail() }
         manager1.tryAcquire(lockId2) { fail() }
 
@@ -129,7 +127,7 @@ internal class PersistentExpiringLockManagerTest {
     }
 
     @Test
-    fun `while manager1 lock is prolonged, manager2 can not acquire lock`() {
+    fun `after manager1 lock prolongation, manager2 can not acquire lock`() {
         val lockId = createLockIdentity()
         val fastFrequentManager = createLockManager(PersistentExpiringLockManagerConfig(
                 lockAcquirePeriod = Duration.ofSeconds(2),
@@ -139,7 +137,13 @@ internal class PersistentExpiringLockManagerTest {
 
         fastFrequentManager.tryAcquire(lockId) { fail() }.shouldBeTrue()
 
-        Thread.sleep(5000)
+        val lockData = zkServer.client.data.forPath(lockId.nodePath)
+
+        //give time for manager1 to apply prolongation
+        await().atMost(1, MINUTES).until {
+            val newLockData = zkServer.client.data.forPath(lockId.nodePath)
+            !newLockData.contentEquals(lockData)
+        }
 
         manager2.tryAcquire(lockId) { fail() }.shouldBeFalse()
         fastFrequentManager.release(lockId)
@@ -151,6 +155,10 @@ internal class PersistentExpiringLockManagerTest {
 
     @Test
     fun `acquire and release 30 different locks in parallel`() = runBlocking {
+        val locksPath = "/locks" + nextId()
+        fun createLockIdentityForIndex(index: Int) =
+                LockIdentity("$locksPath/lock-$index", "meta: $index")
+
         val locksCount = 30
         val dispatcher = Executors.newFixedThreadPool(12).asCoroutineDispatcher()
 
@@ -160,7 +168,7 @@ internal class PersistentExpiringLockManagerTest {
 
         lockManagers.mapIndexed { i, it ->
             async(context = dispatcher) {
-                val lockId = LockIdentity("lock-$i", "/locks/lock-$i")
+                val lockId = createLockIdentityForIndex(i)
                 it.tryAcquire(lockId) { fail() }.shouldBeTrue()
 
                 println("After acquiring lock: \n" + zkTree())
@@ -168,11 +176,11 @@ internal class PersistentExpiringLockManagerTest {
             }
         }.awaitAll()
 
-        assertEquals(locksCount, zkServer.client.children.forPath("/locks").size)
+        assertEquals(locksCount, zkServer.client.children.forPath("$locksPath").size)
 
         lockManagers.mapIndexed { i, it ->
             async(context = dispatcher) {
-                val lockId = LockIdentity("lock-$i", "/locks/lock-$i")
+                val lockId = createLockIdentityForIndex(i)
                 it.release(lockId)
 
                 println("After releasing lock: \n" + zkTree())
@@ -180,10 +188,10 @@ internal class PersistentExpiringLockManagerTest {
             }
         }.awaitAll()
 
-        assertEquals(0, zkServer.client.children.forPath("/locks").size)
+        assertEquals(0, zkServer.client.children.forPath(locksPath).size)
     }
 
-    fun createLockIdentity(id: Int = nextLockId()) = LockIdentity("$LOCK_PATH/id", "meta: $LOCK_PATH/id")
+    fun createLockIdentity(id: Int = nextId()) = LockIdentity("$LOCK_PATH/id", "meta: $LOCK_PATH/id")
 
     private fun createLockManager(
             config: PersistentExpiringLockManagerConfig = PersistentExpiringLockManagerConfig()) =

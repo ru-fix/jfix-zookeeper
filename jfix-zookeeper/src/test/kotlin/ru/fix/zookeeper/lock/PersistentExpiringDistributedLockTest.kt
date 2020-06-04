@@ -15,10 +15,7 @@ import org.apache.curator.framework.state.ConnectionStateListener
 import org.apache.logging.log4j.kotlin.logger
 import org.apache.zookeeper.KeeperException
 import org.awaitility.Awaitility.await
-import org.junit.jupiter.api.AfterAll
-import org.junit.jupiter.api.BeforeAll
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.*
 import org.junit.jupiter.api.parallel.Execution
 import org.junit.jupiter.api.parallel.ExecutionMode
 import org.netcrusher.core.reactor.NioReactor
@@ -557,5 +554,12 @@ internal class PersistentExpiringDistributedLockTest {
         zkServer.client.setData().forPath(path, "asdf#fljs;d".toByteArray())
 
         lock.release().shouldBe(ReleaseResult.LOCK_IS_LOST)
+    }
+
+    @Test
+    fun `lock id node path that does not start with slash raise an exception`(){
+        assertThrows<Exception> {
+            PersistentExpiringDistributedLock(zkServer.client, LockIdentity("path/here"))
+        }
     }
 }

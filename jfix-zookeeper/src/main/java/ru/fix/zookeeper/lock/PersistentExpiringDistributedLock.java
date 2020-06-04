@@ -2,6 +2,7 @@ package ru.fix.zookeeper.lock;
 
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.cache.NodeCache;
+import org.apache.curator.utils.PathUtils;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.data.Stat;
 import org.jetbrains.annotations.NotNull;
@@ -105,6 +106,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             CuratorFramework curatorFramework,
             LockIdentity lockId
     ) throws Exception {
+        PathUtils.validatePath(lockId.getNodePath());
         this.curatorFramework = curatorFramework;
         this.lockId = lockId;
         this.uuid = UUID.randomUUID().toString();

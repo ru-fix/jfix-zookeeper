@@ -82,13 +82,35 @@ internal class PersistentExpiringDistributedLockTest {
 
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
 
-        logger.info(ZkTreePrinter(zkServer.client).print("/", true))
-
         val data = zkServer.client.data.forPath(lockPath(id)).toString(StandardCharsets.UTF_8)
         logger.info(data)
         data.shouldContain("uuid")
 
         lock.close()
+    }
+
+    @Test
+    fun `lock in zookeeper removed after lock close`() {
+        val id = idSequence.get()
+        val path = lockPath(id)
+        val lock = createLock(id)
+
+        lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
+        lock.close()
+
+        zkServer.client.checkExists().forPath(lockPath(id)).shouldBe(null)
+    }
+
+    @Test
+    fun `lock in zookeeper removed after lock release`() {
+        val id = idSequence.get()
+        val path = lockPath(id)
+        val lock = createLock(id)
+
+        lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
+        lock.release()
+
+        zkServer.client.checkExists().forPath(lockPath(id)).shouldBe(null)
     }
 
     @Test
@@ -529,5 +551,15 @@ internal class PersistentExpiringDistributedLockTest {
         zkServer.client.setData().forPath(path, "asdf#fljs;d".toByteArray())
 
         lock.release().shouldBe(ReleaseResult.LOCK_IS_LOST)
+    }
+
+    @Test
+    fun `concurrent release and prolong on same lock node and same instance is safe`(){
+        fail()
+    }
+
+    @Test
+    fun `concurrent release and prolong on same lock node and different instance is safe`(){
+        fail()
     }
 }

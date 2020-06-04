@@ -1,6 +1,5 @@
 package ru.fix.zookeeper.instance.registry
 
-import com.fasterxml.jackson.core.type.TypeReference
 import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.framework.state.ConnectionState
 import org.apache.curator.framework.state.ConnectionStateListener
@@ -46,9 +45,9 @@ class ServiceInstanceIdRegistry(
             curatorFramework,
             DynamicProperty.of(
                     PersistentExpiringLockManagerConfig(
-                            reservationPeriod = config.disconnectTimeout.dividedBy(2),
+                            lockAcquirePeriod = config.disconnectTimeout.dividedBy(2),
                             expirationPeriod = config.disconnectTimeout.dividedBy(3),
-                            lockProlongationInterval = config.disconnectTimeout.dividedBy(4),
+                            lockCheckAndProlongInterval = config.disconnectTimeout.dividedBy(4),
                             acquiringTimeout = Duration.ofSeconds(1)
                     )
             ),

@@ -11,7 +11,10 @@ dependencies {
     implementation(Libs.apache_curator_recipes)
     implementation(Libs.jfix_stdlib_concurrency)
 
+    testImplementation(Libs.kotest_assertions)
+    testImplementation(Libs.kotest_runner)
     testImplementation(Libs.log4j_slf4j_impl)
+    testImplementation(Libs.log4j_kotlin)
     testImplementation(Libs.kotlinx_coroutines_core)
     testImplementation(Libs.junit_jupiter_engine)
     testImplementation(Libs.junit_jupiter_api)
@@ -21,4 +24,5 @@ dependencies {
     testImplementation(Libs.apache_curator_test)
     testImplementation(Libs.netcrusher)
     testImplementation(project(":jfix-zookeeper-test"))
+
 }

@@ -4,21 +4,22 @@ import java.time.Duration
 
 data class PersistentExpiringLockManagerConfig(
         /**
-         *  How long to hold lock
+         *  For how log to acquire the lock.
+         *  @see PersistentExpiringDistributedLock#expirableAcquire
          */
-        val reservationPeriod: Duration = Duration.ofSeconds(60),
+        val lockAcquirePeriod: Duration = Duration.ofSeconds(90),
         /**
-         * how long lock acquiring can be performed
+         * How many time can be spend during acquiring attempt
+         * @see PersistentExpiringDistributedLock#expirableAcquire
          */
-        val acquiringTimeout: Duration = Duration.ofSeconds(2),
+        val acquiringTimeout: Duration = Duration.ofSeconds(3),
         /**
-         * time for checking lock expiration.
-         * If lock expires after lock.expirationTime + expiration period,
-         * then prolong this lock, else do nothing
+         * If lock is going to expire after this period then lock will be prolonged
+         * @see PersistentExpiringDistributedLock#checkAndProlongIfExpiresIn
          */
-        val expirationPeriod: Duration = Duration.ofSeconds(20),
+        val expirationPeriod: Duration = Duration.ofSeconds(30),
         /**
-         * how often to prolong locks
+         * How often manager will check locks for theirs expirationPeriod
          */
-        val lockProlongationInterval: Duration = Duration.ofSeconds(10)
+        val lockCheckAndProlongInterval: Duration = Duration.ofSeconds(10)
 )

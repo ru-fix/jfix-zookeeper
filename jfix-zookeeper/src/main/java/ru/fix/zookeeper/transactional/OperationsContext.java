@@ -1,9 +1,9 @@
-package ru.fix.zookeeper.transactional.impl;
+package ru.fix.zookeeper.transactional;
 
 import java.util.Set;
 import java.util.TreeSet;
 
-public class OperationsContext {
+class OperationsContext {
 
     private Set<String> localNodesToCreate = new TreeSet<>();
     private Set<String> localNodesToDelete = new TreeSet<>();

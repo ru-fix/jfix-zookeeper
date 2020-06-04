@@ -1,11 +1,17 @@
 package ru.fix.zookeeper.lock
 
+import org.apache.curator.utils.PathUtils
+
+
 data class LockIdentity(
-        val id: String,
         val nodePath: String,
-        val data: String? = null
+        val metadata: String? = null
 ) : Comparable<LockIdentity> {
 
-    override fun compareTo(other: LockIdentity) = compareValuesBy(this, other, { it.id }, { it.id })
+    init {
+        PathUtils.validatePath(nodePath)
+    }
+
+    override fun compareTo(other: LockIdentity) = compareValuesBy(this, other, { it.nodePath }, { it.nodePath })
 
 }

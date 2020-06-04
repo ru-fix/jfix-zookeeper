@@ -1,8 +1,7 @@
-package ru.fix.zookeeper.transactional.impl;
+package ru.fix.zookeeper.transactional;
 
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.framework.api.transaction.CuratorTransaction;
-import org.apache.curator.framework.api.transaction.CuratorTransactionBridge;
+import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.utils.PathUtils;
 import org.apache.curator.utils.ZKPaths;
 import org.slf4j.Logger;
@@ -11,25 +10,23 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class DeleteOperation extends AbstractPathOperation {
+class DeleteOperation implements Operation {
 
-    private Logger logger = LoggerFactory.getLogger(DeleteOperation.class);
+    private final Logger logger = LoggerFactory.getLogger(DeleteOperation.class);
 
+    private final CuratorFramework curatorFramework;
+    private final String path;
     private boolean deleteWithChildren;
 
     public DeleteOperation(CuratorFramework curatorFramework, String path, boolean deleteWithChildren) {
-        super(curatorFramework, path);
+        this.curatorFramework = curatorFramework;
+        this.path = PathUtils.validatePath(path);
         this.deleteWithChildren = deleteWithChildren;
     }
 
-    public boolean isDeleteWithChildren() {
-        return deleteWithChildren;
-    }
-
     @Override
-    public CuratorTransactionBridge appendToTransaction(CuratorTransaction curatorTransaction,
-                                                        OperationsContext operationsContext) throws Exception {
-        String path = PathUtils.validatePath(getPath());
+    public List<CuratorOp> buildOperations(OperationsContext operationsContext) throws Exception {
+        ArrayList<CuratorOp> operations = new ArrayList<CuratorOp>();
         if (deleteWithChildren) {
             Set<String> localNodesToDelete = new TreeSet<>();
             collectAllChildren(path, localNodesToDelete);
@@ -39,7 +36,7 @@ public class DeleteOperation extends AbstractPathOperation {
             for (String nodeToDelete : reversedNodeToDelete) {
                 if (!operationsContext.isDeleted(nodeToDelete)) {
                     operationsContext.markAsDeleted(nodeToDelete);
-                    curatorTransaction.delete().forPath(nodeToDelete);
+                    operations.add(curatorFramework.transactionOp().delete().forPath(nodeToDelete));
                     logger.trace("Appended delete operation: {}", nodeToDelete);
                 }
             }
@@ -48,11 +45,12 @@ public class DeleteOperation extends AbstractPathOperation {
         // append operation for current node without checks
         operationsContext.markAsDeleted(path);
         logger.trace("Appended delete operation: {}", path);
-        return curatorTransaction.delete().forPath(path);
+        operations.add(curatorFramework.transactionOp().delete().forPath(path));
+        return operations;
     }
 
     private void collectAllChildren(String path, Collection<String> collectedChildren) throws Exception {
-        List<String> children = getCuratorFramework().getChildren().forPath(path);
+        List<String> children = curatorFramework.getChildren().forPath(path);
         for (String item : children) {
             String itemPath = ZKPaths.makePath(path, item);
             collectedChildren.add(itemPath);

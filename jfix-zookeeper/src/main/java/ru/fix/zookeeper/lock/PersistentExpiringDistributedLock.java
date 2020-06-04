@@ -122,11 +122,11 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      * @return true if the lock was acquired, false if not
      * @throws Exception ZK errors, connection interruptions
      */
-    public boolean expirableAcquire(
+    public synchronized boolean expirableAcquire(
             @NotNull Duration acquirePeriod,
             @NotNull Duration acquiringTimeout
     ) throws Exception {
-        assertState();
+        assertNotClosed();
 
         final Instant startAcquiringTime = Instant.now();
         lockWatcher.clearEvents();
@@ -258,7 +258,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         }
     }
 
-    private void assertState() {
+    private void assertNotClosed() {
         if (isClosed.get()) {
             throw new IllegalStateException("Lock " + lockId + " already closed");
         }
@@ -305,8 +305,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      * {@code false} if current instance doesn't owns the lock
      * @throws Exception ZK errors, connection interruptions
      */
-    public boolean checkAndProlong(Duration prolongationPeriod) throws Exception {
-        assertState();
+    public synchronized boolean checkAndProlong(Duration prolongationPeriod) throws Exception {
+        assertNotClosed();
 
         Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
         try {
@@ -324,8 +324,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     /**
      * Check if lock is not expired and in acquired state.
      */
-    public State getState() throws Exception {
-        assertState();
+    public synchronized State getState() throws Exception {
+        assertNotClosed();
 
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
@@ -358,8 +358,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      *
      * @throws Exception in case of connection or ZK errors
      */
-    public ReleaseResult release() throws Exception {
-        assertState();
+    public synchronized ReleaseResult release() throws Exception {
+        assertNotClosed();
         try {
             Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
             if (nodeStat == null) {
@@ -423,7 +423,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         try {
             release();
         } catch (Exception exception) {
@@ -455,11 +455,11 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
      * @return true if current instance owns the lock, false otherwise
      * @throws Exception zk errors, connection interruptions
      */
-    public boolean checkAndProlongIfExpiresIn(
+    public synchronized boolean checkAndProlongIfExpiresIn(
             Duration prolongationPeriod,
             Duration expirationPeriod
     ) throws Exception {
-        assertState();
+        assertNotClosed();
 
         if (expirationDate.isBefore(Instant.now().plus(expirationPeriod))) {
             return checkAndProlong(prolongationPeriod);

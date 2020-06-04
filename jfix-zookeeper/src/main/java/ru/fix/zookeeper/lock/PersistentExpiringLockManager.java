@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Acquires {@code PersistentExpiringDistributedLock} locks and automatically prolongs them.
  */
-class PersistentExpiringLockManager implements AutoCloseable {
+public class PersistentExpiringLockManager implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(PersistentExpiringLockManager.class);
 
@@ -84,30 +84,30 @@ class PersistentExpiringLockManager implements AutoCloseable {
 
     public boolean tryAcquire(LockIdentity lockId, LockProlongationFailedListener listener) {
         try {
-            PersistentExpiringDistributedLock persistentLock = new PersistentExpiringDistributedLock(
+            PersistentExpiringDistributedLock newPersistentLock = new PersistentExpiringDistributedLock(
                     curatorFramework,
                     lockId
             );
 
             Duration acquirePeriod = config.get().getLockAcquirePeriod();
             Duration acquiringTimeout = config.get().getAcquiringTimeout();
-            if (!persistentLock.expirableAcquire(acquirePeriod, acquiringTimeout)) {
+            if (!newPersistentLock.expirableAcquire(acquirePeriod, acquiringTimeout)) {
                 logger.debug(
                         "Failed to acquire expirable lock. Acquire period: {}, timeout: {}, lockId: {}",
                         acquirePeriod, acquiringTimeout, lockId
                 );
-                persistentLock.close();
+                newPersistentLock.close();
                 return false;
             }
 
-            LockContainer newLock = new LockContainer(persistentLock, listener);
-            LockContainer oldLock = locks.put(lockId, newLock);
+            LockContainer newLockContainer = new LockContainer(newPersistentLock, listener);
+            LockContainer oldLockContainer = locks.put(lockId, newLockContainer);
 
-            if (oldLock != null) {
+            if (oldLockContainer != null) {
                 logger.error("Illegal state of locking for lockId={}." +
                         " Lock already existed inside LockManager but expired. " +
                         " And was replaced by new lock.", lockId);
-                oldLock.close();
+                oldLockContainer.close();
             }
 
             logger.info("Lock with lockId={} with successfully acquired", lockId);

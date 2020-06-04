@@ -195,5 +195,5 @@ internal class PersistentExpiringLockManagerTest {
 
     private fun nodeExists(path: String) = zkServer.client.checkExists().forPath(path) != null
 
-    private fun zkTree() = ZkTreePrinter(zkServer.client).print("/", true)
+    private fun zkTree() = ZkTreePrinter(zkServer.client).print("/")
 }

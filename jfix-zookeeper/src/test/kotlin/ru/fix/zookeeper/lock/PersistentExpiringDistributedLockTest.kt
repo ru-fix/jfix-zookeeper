@@ -3,8 +3,12 @@ package ru.fix.zookeeper.lock
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.framework.state.ConnectionState
 import org.apache.curator.framework.state.ConnectionStateListener
@@ -31,10 +35,12 @@ import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MINUTES
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicReferenceArray
 import java.util.function.Supplier
 
 @Execution(ExecutionMode.CONCURRENT)
@@ -52,7 +58,7 @@ internal class PersistentExpiringDistributedLockTest {
 
     fun createLock(id: String = idSequence.get(),
                    path: String = lockPath(id),
-                   zkClient:CuratorFramework = zkServer.client,
+                   zkClient: CuratorFramework = zkServer.client,
                    data: String? = null): PersistentExpiringDistributedLock {
         return PersistentExpiringDistributedLock(
                 zkClient,
@@ -334,7 +340,7 @@ internal class PersistentExpiringDistributedLockTest {
         networkFailure.activate(proxyTcpCrusher)
         await().atMost(10, MINUTES).until { zkProxyState.get() == ConnectionState.LOST }
 
-        val lock2 = PersistentExpiringDistributedLock(zkServer.client, LockIdentity( lockPath(id)))
+        val lock2 = PersistentExpiringDistributedLock(zkServer.client, LockIdentity(lockPath(id)))
         lock2.expirableAcquire(Duration.ofMillis(100), Duration.ofMillis(100)).shouldBeFalse()
         lock2.close()
 
@@ -379,7 +385,7 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `failed connection to zookeeper raise exception during lock creation`(){
+    fun `failed connection to zookeeper raise exception during lock creation`() {
         val proxyTcpCrusher = openProxyTcpCrusher()
         val zkProxyClient = createZkProxyClient(proxyTcpCrusher)
         val zkProxyState = startWatchZkProxyClientState(zkProxyClient)
@@ -388,7 +394,7 @@ internal class PersistentExpiringDistributedLockTest {
 
         await().atMost(10, MINUTES).until {
             zkProxyState.get() == ConnectionState.SUSPENDED ||
-            zkProxyState.get() == ConnectionState.LOST
+                    zkProxyState.get() == ConnectionState.LOST
         }
 
         shouldThrow<KeeperException> {
@@ -455,7 +461,7 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `closed lock can not be acquired`(){
+    fun `closed lock can not be acquired`() {
         val lock = createLock()
         lock.close()
 
@@ -465,7 +471,7 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `closed lock can not be released`(){
+    fun `closed lock can not be released`() {
         val lock = createLock()
         lock.close()
 
@@ -513,13 +519,13 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `garbage in zk lock node ignored and overwritten during acquiring`(){
+    fun `garbage in zk lock node ignored and overwritten during acquiring`() {
         val id = idSequence.get()
         val path = lockPath(id)
 
         createLock(id).use {
             it.expirableAcquire(Duration.ofMillis(1), Duration.ofSeconds(10))
-            await().atMost(Duration.ofMinutes(1)).until{
+            await().atMost(Duration.ofMinutes(1)).until {
                 it.state.isExpired
             }
         }
@@ -530,7 +536,7 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `garbage in zk lock node treated as if lock is lost during prolongation`(){
+    fun `garbage in zk lock node treated as if lock is lost during prolongation`() {
         val id = idSequence.get()
         val path = lockPath(id)
         val lock = createLock(id = id)
@@ -542,7 +548,7 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `garbage in zk lock node treated as if lock is lost during release`(){
+    fun `garbage in zk lock node treated as if lock is lost during release`() {
         val id = idSequence.get()
         val path = lockPath(id)
         val lock = createLock(id = id)
@@ -551,15 +557,5 @@ internal class PersistentExpiringDistributedLockTest {
         zkServer.client.setData().forPath(path, "asdf#fljs;d".toByteArray())
 
         lock.release().shouldBe(ReleaseResult.LOCK_IS_LOST)
-    }
-
-    @Test
-    fun `concurrent release and prolong on same lock node and same instance is safe`(){
-        fail()
-    }
-
-    @Test
-    fun `concurrent release and prolong on same lock node and different instance is safe`(){
-        fail()
     }
 }

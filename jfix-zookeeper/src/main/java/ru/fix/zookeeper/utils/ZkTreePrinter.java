@@ -30,7 +30,7 @@ public class ZkTreePrinter {
      * @return tree's string representation
      */
     public String print(String path) {
-        return print(path, false);
+        return print(path, true);
     }
 
     public String print(String path, boolean includeData) {

@@ -12,7 +12,6 @@ import ru.fix.zookeeper.transactional.ZkTransaction;
 import ru.fix.zookeeper.utils.Marshaller;
 
 import javax.annotation.concurrent.NotThreadSafe;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -415,7 +414,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         return Marshaller.marshall(lockData).getBytes(StandardCharsets.UTF_8);
     }
 
-    private LockData decodeLockData(byte[] content) throws IOException {
+    private LockData decodeLockData(byte[] content) {
         try {
             return Marshaller.unmarshall(new String(content, StandardCharsets.UTF_8), LockData.class);
         } catch (Exception exception) {
@@ -432,7 +431,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             logger.error("Failed to close lock {}", lockId, exception);
 
         } finally {
-            if (isClosed.compareAndExchange(false, true) == false) {
+            if (!isClosed.compareAndExchange(false, true)) {
                 lockWatcher.close();
             }
         }

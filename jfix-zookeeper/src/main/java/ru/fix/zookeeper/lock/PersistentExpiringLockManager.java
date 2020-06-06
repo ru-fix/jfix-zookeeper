@@ -8,7 +8,6 @@ import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.stdlib.concurrency.threads.NamedExecutors;
 import ru.fix.stdlib.concurrency.threads.ReschedulableScheduler;
 import ru.fix.stdlib.concurrency.threads.Schedule;
-import ru.fix.zookeeper.utils.Marshaller;
 
 import java.time.Duration;
 import java.util.Optional;

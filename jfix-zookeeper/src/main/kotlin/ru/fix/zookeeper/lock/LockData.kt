@@ -1,6 +1,7 @@
 package ru.fix.zookeeper.lock
 
-import com.fasterxml.jackson.annotation.*
+import com.fasterxml.jackson.annotation.JsonFormat
+import com.fasterxml.jackson.annotation.JsonIgnore
 import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.net.UnknownHostException

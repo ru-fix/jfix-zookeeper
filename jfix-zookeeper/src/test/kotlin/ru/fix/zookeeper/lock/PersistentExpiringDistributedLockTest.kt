@@ -3,12 +3,8 @@ package ru.fix.zookeeper.lock
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
-import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.async
-import kotlinx.coroutines.runBlocking
 import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.framework.state.ConnectionState
 import org.apache.curator.framework.state.ConnectionStateListener
@@ -26,18 +22,15 @@ import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock.ReleaseResult
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.Marshaller
 import ru.fix.zookeeper.utils.ZkTreePrinter
-import java.lang.IllegalStateException
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MINUTES
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.atomic.AtomicReferenceArray
 import java.util.function.Supplier
 
 @Execution(ExecutionMode.CONCURRENT)

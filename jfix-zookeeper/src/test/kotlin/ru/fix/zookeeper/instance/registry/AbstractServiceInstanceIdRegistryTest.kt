@@ -1,6 +1,5 @@
 package ru.fix.zookeeper.instance.registry
 
-import com.fasterxml.jackson.core.type.TypeReference
 import org.apache.curator.framework.CuratorFramework
 import org.junit.jupiter.api.Assertions
 import ru.fix.aggregating.profiler.NoopProfiler

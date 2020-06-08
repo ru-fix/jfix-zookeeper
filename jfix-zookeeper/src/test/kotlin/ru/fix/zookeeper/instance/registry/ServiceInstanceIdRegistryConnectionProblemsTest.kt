@@ -157,13 +157,19 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
 
     @Test
     fun `instances registered by same service have all expired locks after connection lost and timeout reached`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
+        val disconnectTimeout = Duration.ofSeconds(2)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
         val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
 
-        val registry = createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout)
+        val registry = createInstanceIdRegistry(
+                client = proxyClient,
+                disconnectTimeout = disconnectTimeout,
+                lockAcquirePeriod = Duration.ofSeconds(1),
+                expirationPeriod = Duration.ofMillis(500),
+                lockCheckAndProlongInterval = Duration.ofMillis(300)
+        )
         registry.register("app")
         registry.register("app")
         registry.register("app")
@@ -173,7 +179,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), disconnectTimeout)
 
         crusher.freeze()
-        Thread.sleep(disconnectTimeout.toMillis() * 2 + 1000)
+        Thread.sleep(disconnectTimeout.toMillis() * 2)
         logger.info(zkTree())
         assertInstanceIdLocksExpiration(setOf("1" to false, "2" to false, "3" to false), disconnectTimeout)
 

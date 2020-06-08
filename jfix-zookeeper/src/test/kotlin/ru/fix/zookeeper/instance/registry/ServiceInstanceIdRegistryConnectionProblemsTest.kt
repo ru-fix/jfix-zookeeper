@@ -173,7 +173,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), disconnectTimeout)
 
         crusher.freeze()
-        Thread.sleep(disconnectTimeout.toMillis() * 2)
+        Thread.sleep(disconnectTimeout.toMillis() * 2 + 1000)
         logger.info(zkTree())
         assertInstanceIdLocksExpiration(setOf("1" to false, "2" to false, "3" to false), disconnectTimeout)
 

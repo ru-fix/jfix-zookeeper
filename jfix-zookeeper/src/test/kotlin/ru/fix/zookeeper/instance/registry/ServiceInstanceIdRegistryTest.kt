@@ -79,7 +79,7 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
         logger.info(zkTree())
         val uniqueInstanceIds = testingServer.client.children
                 .forPath(ZKPaths.makePath(rootPath, "services"))
-                .map { ZKPaths.getNodeFromPath(it).toInt() }
+                .map { it.toInt() }
                 .toSet()
 
         assertEquals(servicesCount, uniqueInstanceIds.size)

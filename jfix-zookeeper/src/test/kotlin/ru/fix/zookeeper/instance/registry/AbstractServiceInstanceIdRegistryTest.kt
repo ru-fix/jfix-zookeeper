@@ -4,8 +4,10 @@ import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.utils.ZKPaths
 import org.junit.jupiter.api.Assertions
 import ru.fix.aggregating.profiler.NoopProfiler
+import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.zookeeper.AbstractZookeeperTest
 import ru.fix.zookeeper.lock.LockData
+import ru.fix.zookeeper.lock.PersistentExpiringLockManagerConfig
 import ru.fix.zookeeper.utils.Marshaller
 import java.time.Duration
 import java.time.Instant
@@ -28,14 +30,14 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
                     val instanceIdData = Marshaller.unmarshall(nodeData.metadata, InstanceIdData::class.java)
                     instanceIdData to it
                 }
-                .map { it.first.applicationName to it.second }
+                .map { it.first.serviceName to it.second }
                 .toList()
 
         Assertions.assertEquals(expected, actual)
     }
 
     protected fun isInstanceIdLockExpired(instanceId: String, disconnectTimeout: Duration): Boolean {
-        val instancePath = ZKPaths.makePath(rootPath,"services", instanceId)
+        val instancePath = ZKPaths.makePath(rootPath, "services", instanceId)
         val nodeData = Marshaller.unmarshall(
                 testingServer.createClient().data.forPath(instancePath).toString(Charsets.UTF_8),
                 LockData::class.java
@@ -63,15 +65,25 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
             registrationRetryCount: Int = 5,
             client: CuratorFramework = testingServer.createClient(),
             maxInstancesCount: Int = Int.MAX_VALUE,
-            disconnectTimeout: Duration = Duration.ofSeconds(10)
+            disconnectTimeout: Duration = Duration.ofSeconds(10),
+            lockAcquirePeriod: Duration = disconnectTimeout.dividedBy(2),
+            expirationPeriod: Duration = disconnectTimeout.dividedBy(3),
+            lockCheckAndProlongInterval: Duration = disconnectTimeout.dividedBy(4)
     ) = ServiceInstanceIdRegistry(
             curatorFramework = client,
             instanceIdGenerator = MinFreeInstanceIdGenerator(maxInstancesCount),
-            config = ServiceInstanceIdRegistryConfig(
-                    rootPath = rootPath,
-                    countRegistrationAttempts = registrationRetryCount,
-                    disconnectTimeout = disconnectTimeout
-            ),
+            serviceRegistrationPath = ZKPaths.makePath(rootPath, "services"),
+            config = DynamicProperty.of(
+                    ServiceInstanceIdRegistryConfig(
+                            countRegistrationAttempts = registrationRetryCount,
+                            disconnectTimeout = disconnectTimeout,
+                            persistentExpiringLockManagerConfig = PersistentExpiringLockManagerConfig(
+                                    lockAcquirePeriod = lockAcquirePeriod,
+                                    expirationPeriod = expirationPeriod,
+                                    lockCheckAndProlongInterval = lockCheckAndProlongInterval,
+                                    acquiringTimeout = Duration.ofSeconds(1)
+                            )
+                    )),
             profiler = NoopProfiler()
     )
 }

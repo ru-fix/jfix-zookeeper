@@ -7,7 +7,8 @@ import kotlinx.coroutines.runBlocking
 import org.apache.curator.utils.ZKPaths
 import org.apache.logging.log4j.kotlin.logger
 import org.awaitility.Awaitility
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.util.*
@@ -45,9 +46,9 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
         val client = testingServer.createClient()
         val client2 = testingServer.createClient()
 
-        createInstanceIdRegistry(client = client).register("abs-rate")
-        createInstanceIdRegistry().register("abs-rate")
-        createInstanceIdRegistry(client = client2).register("drugkeeper")
+        createInstanceIdRegistry(client = client, disconnectTimeout = disconnectTimeout).register("abs-rate")
+        createInstanceIdRegistry(disconnectTimeout = disconnectTimeout).register("abs-rate")
+        createInstanceIdRegistry(client = client2, disconnectTimeout = disconnectTimeout).register("drugkeeper")
 
         logger.info(zkTree())
         assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore
 import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.net.UnknownHostException
+import java.time.Duration
 import java.time.Instant
 
 data class LockData(
@@ -40,6 +41,11 @@ data class LockData(
     ) : this(uuid, expirationDate) {
         this.ip = ip
         this.hostname = hostname
+    }
+
+    @JsonIgnore
+    fun isExpiredWithTimeout(timeout: Duration): Boolean {
+        return expirationTimestamp.plus(timeout).isBefore(Instant.now())
     }
 
     @JsonIgnore

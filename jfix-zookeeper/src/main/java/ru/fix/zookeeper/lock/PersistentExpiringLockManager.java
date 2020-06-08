@@ -37,7 +37,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             this.prolongationFailedListener = prolongationFailedListener;
         }
 
-        public PersistentExpiringDistributedLock.ReleaseResult release() throws Exception {
+        public boolean release() throws Exception {
             return lock.release();
         }
 
@@ -136,29 +136,20 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             return;
         }
         try {
-            var releaseResult = container.release();
-            switch (releaseResult) {
-                case LOCK_IS_LOST:
-                    logger.warn("Lock " + lockId + " is lost before release.");
-                case LOCK_RELEASED:
-                    locks.remove(lockId);
-                    container.close();
-                    break;
-                case LOCK_STILL_OWNED_BUT_EXPIRED:
-                    logger.warn("Lock " + lockId + "tried to be release but already expired");
-                    break;
-                default:
-                    throw new IllegalStateException("" + releaseResult);
+            if (!container.release()) {
+                logger.warn("Failed to release lock {}", lockId);
             }
         } catch (Exception exception) {
             logger.error("Failed to release lock: " + lockId, exception);
+        } finally {
+            locks.remove(lockId);
+            container.close();
         }
     }
 
     private boolean checkAndProlongIfAvailable(
             LockIdentity lockId,
-            PersistentExpiringDistributedLock lock
-    ) {
+            PersistentExpiringDistributedLock lock) {
         try {
             logger.debug("Check and prolong lockId={}", lockId);
             return lock.checkAndProlongIfExpiresIn(

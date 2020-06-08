@@ -18,7 +18,6 @@ import org.netcrusher.core.reactor.NioReactor
 import org.netcrusher.tcp.TcpCrusher
 import org.netcrusher.tcp.TcpCrusherBuilder
 import ru.fix.stdlib.socket.SocketChecker
-import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock.ReleaseResult
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.Marshaller
 import ru.fix.zookeeper.utils.ZkTreePrinter
@@ -117,7 +116,7 @@ internal class PersistentExpiringDistributedLockTest {
             isExpired.shouldBeFalse()
             isOwn.shouldBeTrue()
         }
-        lock.release().shouldBe(ReleaseResult.LOCK_RELEASED)
+        lock.release().shouldBe(true)
         lock.state.apply {
             isOwn.shouldBeFalse()
             isExpired.shouldBeTrue()
@@ -129,10 +128,10 @@ internal class PersistentExpiringDistributedLockTest {
     fun `single actor acquires and unlocks twice`() {
         val lock = createLock()
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
-        lock.release().shouldBe(ReleaseResult.LOCK_RELEASED)
+        lock.release().shouldBe(true)
 
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
-        lock.release().shouldBe(ReleaseResult.LOCK_RELEASED)
+        lock.release().shouldBe(true)
     }
 
     @Test
@@ -140,7 +139,7 @@ internal class PersistentExpiringDistributedLockTest {
         val lock = createLock()
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
-        lock.release().shouldBe(ReleaseResult.LOCK_RELEASED)
+        lock.release().shouldBe(true)
     }
 
     @Test
@@ -183,7 +182,7 @@ internal class PersistentExpiringDistributedLockTest {
         lock.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1))
         zkServer.client.delete().forPath(lockPath(id))
 
-        lock.release().shouldBe(ReleaseResult.LOCK_IS_LOST)
+        lock.release().shouldBe(false)
     }
 
     @Test
@@ -193,7 +192,7 @@ internal class PersistentExpiringDistributedLockTest {
         lock.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1))
         zkServer.client.delete().deletingChildrenIfNeeded().forPath("/path-that-dies")
 
-        lock.release().shouldBe(ReleaseResult.LOCK_IS_LOST)
+        lock.release().shouldBe(false)
     }
 
     @Test
@@ -210,7 +209,7 @@ internal class PersistentExpiringDistributedLockTest {
         val lock1 = createLock()
         lock1.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1)).shouldBeTrue()
         await().atMost(1, MINUTES).until { lock1.state.isExpired }
-        lock1.release().shouldBe(ReleaseResult.LOCK_STILL_OWNED_BUT_EXPIRED)
+        lock1.release().shouldBe(true)
     }
 
     @Test
@@ -488,7 +487,7 @@ internal class PersistentExpiringDistributedLockTest {
         val lockData = zkServer.client.data.forPath(lockPath(id)).toString(StandardCharsets.UTF_8)
         lockData.shouldContain(hostIp)
         lockData.shouldContain(hostName)
-        lock.release().shouldBe(ReleaseResult.LOCK_RELEASED)
+        lock.release().shouldBe(true)
     }
 
     @Test
@@ -545,7 +544,7 @@ internal class PersistentExpiringDistributedLockTest {
         lock.expirableAcquire(Duration.ofSeconds(10), Duration.ofSeconds(10)).shouldBeTrue()
         zkServer.client.setData().forPath(path, "asdf#fljs;d".toByteArray())
 
-        lock.release().shouldBe(ReleaseResult.LOCK_IS_LOST)
+        lock.release().shouldBe(false)
     }
 
     @Test

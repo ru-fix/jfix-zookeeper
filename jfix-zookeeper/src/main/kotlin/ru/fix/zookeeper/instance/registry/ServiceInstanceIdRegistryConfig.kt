@@ -1,21 +1,14 @@
 package ru.fix.zookeeper.instance.registry
 
+import org.apache.curator.utils.ZKPaths
 import java.time.Duration
 
 class ServiceInstanceIdRegistryConfig(
         val rootPath: String,
-        val serviceName: String,
         val countRegistrationAttempts: Int = 20,
-        val serviceRegistrationPath: String = "$rootPath/services",
+        val serviceRegistrationPath: String = ZKPaths.makePath(rootPath,"services"),
         /**
-         * Pair host + port as application's primary key.
+         * Timeout during which the client can be disconnected and didn't lost instance id, that was before reconnection.
          */
-        val host: String,
-        val port: Int,
-        /**
-         * Timeout during which the client does not connect with the same host and port.
-         * After this timeout expiration, new client can get instance id from zk,
-         * if host and port of connected client and host and port of instance in zk are equal.
-         */
-        val disconnectTimeout: Duration = Duration.ofSeconds(30)
+        val disconnectTimeout: Duration = Duration.ofSeconds(60)
 )

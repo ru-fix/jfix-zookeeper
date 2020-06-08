@@ -109,13 +109,11 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 oldLockContainer.close();
             }
 
-            logger.info("Lock with lockId={} with successfully acquired", lockId);
+            logger.info("Lock with lockId={} successfully acquired", lockId);
             return true;
 
         } catch (Exception e) {
-            logger.error(
-                    "Failed to create PersistentExpiringDistributedLock with lockId={}",
-                    lockId, e);
+            logger.error("Failed to create PersistentExpiringDistributedLock with lockId={}", lockId, e);
             return false;
         }
     }

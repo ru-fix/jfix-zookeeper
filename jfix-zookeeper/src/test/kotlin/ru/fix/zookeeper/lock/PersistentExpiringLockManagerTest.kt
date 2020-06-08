@@ -6,6 +6,8 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import org.apache.curator.utils.ZKPaths
+import org.apache.logging.log4j.kotlin.logger
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
@@ -21,6 +23,7 @@ import java.util.concurrent.TimeUnit.MINUTES
 import java.util.concurrent.atomic.AtomicInteger
 
 internal class PersistentExpiringLockManagerTest {
+    private val logger = logger()
     private lateinit var zkServer: ZKTestingServer
     private lateinit var manager1: PersistentExpiringLockManager
     private lateinit var manager2: PersistentExpiringLockManager
@@ -100,11 +103,11 @@ internal class PersistentExpiringLockManagerTest {
         val lockId = LockIdentity("/lock-1", "/locks/lock-1")
         manager1.tryAcquire(lockId) { fail() }
 
-        println("After acquiring lock: \n" + zkTree())
+        logger.info("After acquiring lock: \n" + zkTree())
         nodeExists(lockId.nodePath).shouldBeTrue()
 
         manager1.release(lockId)
-        println("After releasing lock: \n" + zkTree())
+        logger.info("After releasing lock: \n" + zkTree())
         nodeExists(lockId.nodePath).shouldBeFalse()
     }
 
@@ -116,12 +119,12 @@ internal class PersistentExpiringLockManagerTest {
         manager1.tryAcquire(lockId1) { fail() }
         manager1.tryAcquire(lockId2) { fail() }
 
-        println("After acquiring locks: \n" + zkTree())
+        logger.info("After acquiring locks: \n" + zkTree())
         nodeExists(lockId1.nodePath).shouldBeTrue()
         nodeExists(lockId2.nodePath).shouldBeTrue()
 
         manager1.close()
-        println("After closing lock manager: \n" + zkTree())
+        logger.info("After closing lock manager: \n" + zkTree())
         nodeExists(lockId1.nodePath).shouldBeFalse()
         nodeExists(lockId2.nodePath).shouldBeFalse()
     }
@@ -142,7 +145,7 @@ internal class PersistentExpiringLockManagerTest {
         //give time for manager1 to apply prolongation
         await().atMost(1, MINUTES).until {
             val newLockData = zkServer.client.data.forPath(lockId.nodePath)
-            !newLockData.contentEquals(lockData)
+            !newLockData!!.contentEquals(lockData)
         }
 
         manager2.tryAcquire(lockId) { fail() }.shouldBeFalse()
@@ -157,7 +160,7 @@ internal class PersistentExpiringLockManagerTest {
     fun `acquire and release 30 different locks in parallel`() = runBlocking {
         val locksPath = "/locks" + nextId()
         fun createLockIdentityForIndex(index: Int) =
-                LockIdentity("$locksPath/lock-$index", "meta: $index")
+                LockIdentity(ZKPaths.makePath(locksPath, "lock-$index"), "meta: $index")
 
         val locksCount = 30
         val dispatcher = Executors.newFixedThreadPool(12).asCoroutineDispatcher()
@@ -171,19 +174,19 @@ internal class PersistentExpiringLockManagerTest {
                 val lockId = createLockIdentityForIndex(i)
                 it.tryAcquire(lockId) { fail() }.shouldBeTrue()
 
-                println("After acquiring lock: \n" + zkTree())
+                logger.info("After acquiring lock: \n" + zkTree())
                 assertTrue(nodeExists(lockId.nodePath))
             }
         }.awaitAll()
 
-        assertEquals(locksCount, zkServer.client.children.forPath("$locksPath").size)
+        assertEquals(locksCount, zkServer.client.children.forPath(locksPath).size)
 
         lockManagers.mapIndexed { i, it ->
             async(context = dispatcher) {
                 val lockId = createLockIdentityForIndex(i)
                 it.release(lockId)
 
-                println("After releasing lock: \n" + zkTree())
+                logger.info("After releasing lock: \n" + zkTree())
                 assertFalse(nodeExists(lockId.nodePath))
             }
         }.awaitAll()
@@ -191,7 +194,8 @@ internal class PersistentExpiringLockManagerTest {
         assertEquals(0, zkServer.client.children.forPath(locksPath).size)
     }
 
-    fun createLockIdentity(id: Int = nextId()) = LockIdentity("$LOCK_PATH/id", "meta: $LOCK_PATH/id")
+    private fun createLockIdentity(id: Int = nextId()) =
+            LockIdentity(ZKPaths.makePath(LOCK_PATH, id.toString()), "meta: $LOCK_PATH/id")
 
     private fun createLockManager(
             config: PersistentExpiringLockManagerConfig = PersistentExpiringLockManagerConfig()) =

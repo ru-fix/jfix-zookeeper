@@ -38,24 +38,26 @@ import java.util.function.Supplier
 internal class PersistentExpiringDistributedLockTest {
     private val logger = logger()
 
-    val LOCKS_PATH = "/locks"
-
-    lateinit var zkServer: ZKTestingServer
-    val idSequence = object : Supplier<String> {
+    private lateinit var zkServer: ZKTestingServer
+    private val idSequence = object : Supplier<String> {
         val counter = AtomicInteger()
         override fun get(): String = counter.incrementAndGet().toString()
     }
 
-    fun createLock(id: String = idSequence.get(),
-                   path: String = lockPath(id),
-                   zkClient: CuratorFramework = zkServer.client,
-                   data: String? = null): PersistentExpiringDistributedLock {
+    companion object {
+        private const val LOCKS_PATH = "/locks"
+    }
+
+    private fun createLock(id: String = idSequence.get(),
+                           path: String = lockPath(id),
+                           zkClient: CuratorFramework = zkServer.client,
+                           data: String? = null): PersistentExpiringDistributedLock {
         return PersistentExpiringDistributedLock(
                 zkClient,
                 LockIdentity(path, data))
     }
 
-    fun lockPath(id: String) = "$LOCKS_PATH/$id"
+    private fun lockPath(id: String) = "$LOCKS_PATH/$id"
 
     @BeforeAll
     fun startZkTestingServer() {
@@ -88,7 +90,6 @@ internal class PersistentExpiringDistributedLockTest {
     @Test
     fun `lock in zookeeper removed after lock close`() {
         val id = idSequence.get()
-        val path = lockPath(id)
         val lock = createLock(id)
 
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
@@ -100,7 +101,6 @@ internal class PersistentExpiringDistributedLockTest {
     @Test
     fun `lock in zookeeper removed after lock release`() {
         val id = idSequence.get()
-        val path = lockPath(id)
         val lock = createLock(id)
 
         lock.expirableAcquire(Duration.ofMinutes(1), Duration.ofMillis(1)).shouldBeTrue()
@@ -209,7 +209,7 @@ internal class PersistentExpiringDistributedLockTest {
     fun `expired lock is released with EXPIRED status`() {
         val lock1 = createLock()
         lock1.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1)).shouldBeTrue()
-        await().atMost(1, MINUTES).until { lock1.getState().isExpired }
+        await().atMost(1, MINUTES).until { lock1.state.isExpired }
         lock1.release().shouldBe(ReleaseResult.LOCK_STILL_OWNED_BUT_EXPIRED)
     }
 
@@ -318,7 +318,7 @@ internal class PersistentExpiringDistributedLockTest {
                 })
     }
 
-    fun `temporary failed zookeeper connection do not invalidate lock`(networkFailure: NetworkFailure) {
+    private fun `temporary failed zookeeper connection do not invalidate lock`(networkFailure: NetworkFailure) {
         val proxyTcpCrusher = openProxyTcpCrusher()
         val zkProxyClient = createZkProxyClient(proxyTcpCrusher)
         val zkProxyState = startWatchZkProxyClientState(zkProxyClient)
@@ -354,12 +354,11 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     private fun createZkProxyClient(proxyTcpCrusher: TcpCrusher): CuratorFramework {
-        val zkProxyClient = zkServer.createClient(
+        return zkServer.createClient(
                 "${proxyTcpCrusher.bindAddress.hostString}:${proxyTcpCrusher.bindAddress.port}",
                 Duration.ofSeconds(5).toMillis().toInt(),
                 Duration.ofSeconds(5).toMillis().toInt(),
                 Duration.ofSeconds(5).toMillis().toInt())
-        return zkProxyClient
     }
 
     private fun openProxyTcpCrusher(): TcpCrusher {
@@ -550,7 +549,7 @@ internal class PersistentExpiringDistributedLockTest {
     }
 
     @Test
-    fun `lock id node path that does not start with slash raise an exception`(){
+    fun `lock id node path that does not start with slash raise an exception`() {
         assertThrows<Exception> {
             PersistentExpiringDistributedLock(zkServer.client, LockIdentity("path/here"))
         }

@@ -4,6 +4,8 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import org.apache.curator.utils.ZKPaths
+import org.apache.logging.log4j.kotlin.logger
 import org.awaitility.Awaitility
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -12,20 +14,29 @@ import java.util.*
 import java.util.concurrent.Executors
 
 internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdRegistryTest() {
+    private val logger = logger()
 
     @Test
-    fun `sequential startup of 3 instances should generate id from 1 to 3`() {
-        val instances = listOf(
-                createInstanceIdRegistry("abs-rate"),
-                createInstanceIdRegistry("abs-rate"),
-                createInstanceIdRegistry("drugkeeper")
-        )
-
-        println(zkTree())
+    fun `instances registered via single service registry`() {
+        val registry = createInstanceIdRegistry()
+        assertEquals("1", registry.register("abs-rate"))
+        assertEquals("2", registry.register("abs-rate"))
+        assertEquals("3", registry.register("drugkeeper"))
         assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
-        assertEquals("1", instances[0].instanceId)
-        assertEquals("2", instances[1].instanceId)
-        assertEquals("3", instances[2].instanceId)
+    }
+
+    @Test
+    fun `sequential startup of 3 service registry and register instances on each of them`() {
+        val instanceIds = listOf(
+                createInstanceIdRegistry(),
+                createInstanceIdRegistry(),
+                createInstanceIdRegistry()
+        ).map { it.register(UUID.randomUUID().toString()) }
+
+        logger.info(zkTree())
+        assertEquals("1", instanceIds[0])
+        assertEquals("2", instanceIds[1])
+        assertEquals("3", instanceIds[2])
     }
 
     @Test
@@ -33,11 +44,12 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
         val disconnectTimeout = Duration.ofSeconds(5)
         val client = testingServer.createClient()
         val client2 = testingServer.createClient()
-        createInstanceIdRegistry("abs-rate", client = client)
-        createInstanceIdRegistry("abs-rate")
-        createInstanceIdRegistry("drugkeeper", client = client2)
 
-        println(zkTree())
+        createInstanceIdRegistry(client = client).register("abs-rate")
+        createInstanceIdRegistry().register("abs-rate")
+        createInstanceIdRegistry(client = client2).register("drugkeeper")
+
+        logger.info(zkTree())
         assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
 
         client2.blockUntilConnected()
@@ -47,12 +59,12 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
                 .until { !client.zookeeperClient.isConnected }
 
         Thread.sleep(disconnectTimeout.multipliedBy(2).toMillis())
-        println(zkTree())
+        logger.info(zkTree())
         assertInstanceIdLocksExpiration(setOf("1" to false, "2" to true, "3" to true), disconnectTimeout)
     }
 
     @Test
-    fun `parallel startup should be without instance id collisions`() = runBlocking {
+    fun `parallel startup of 30 different service registries should register services with no collisions`() = runBlocking {
         val servicesCount = 30
         val dispatcher = Executors.newFixedThreadPool(12) {
             Thread(it, "discovery-pool")
@@ -60,13 +72,36 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
 
         List(servicesCount) {
             async(context = dispatcher) {
-                createInstanceIdRegistry(registrationRetryCount = 20, maxInstancesCount = 127)
+                createInstanceIdRegistry(registrationRetryCount = 20, maxInstancesCount = 127).register("app")
             }
         }.awaitAll()
 
-        println(zkTree())
+        logger.info(zkTree())
         val uniqueInstanceIds = testingServer.client.children
-                .forPath("$rootPath/services")
+                .forPath(ZKPaths.makePath(rootPath, "services"))
+                .map { ZKPaths.getNodeFromPath(it).toInt() }
+                .toSet()
+
+        assertEquals(servicesCount, uniqueInstanceIds.size)
+    }
+
+    @Test
+    fun `parallel registration of 30 services should be performed without instance id collisions`() = runBlocking {
+        val servicesCount = 30
+        val dispatcher = Executors.newFixedThreadPool(12) {
+            Thread(it, "discovery-pool")
+        }.asCoroutineDispatcher()
+
+        val registry = createInstanceIdRegistry(registrationRetryCount = 20, maxInstancesCount = 127)
+        List(servicesCount) {
+            async(context = dispatcher) {
+                registry.register("app")
+            }
+        }.awaitAll()
+
+        logger.info(zkTree())
+        val uniqueInstanceIds = testingServer.client.children
+                .forPath(ZKPaths.makePath(rootPath, "services"))
                 .map { it.substringAfterLast("/").toInt() }
                 .toSet()
 
@@ -74,28 +109,28 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
     }
 
     @Test
-    fun `successful instance creation when registration path is already initialized`() {
-        createInstanceIdRegistry("abs-shake")
-        createInstanceIdRegistry("abs-rate")
+    fun `successful instance registration when registration path is already initialized by another service registry`() {
+        createInstanceIdRegistry()
+        createInstanceIdRegistry().register("abs-shake")
 
-        println(zkTree())
-        assertInstances(mapOf("abs-shake" to setOf("1"), "abs-rate" to setOf("2")))
+        logger.info(zkTree())
+        assertInstances(mapOf("abs-shake" to setOf("1")))
     }
 
     @Test
-    fun `instance id should be in range from 1 to 10, error thrown otherwise`() {
+    fun `instance id should be in range from 1 to 10 because limit = 10, error thrown otherwise`() {
         val maxAvailableId = 10
         repeat(maxAvailableId) {
-            createInstanceIdRegistry(UUID.randomUUID().toString(), 20, testingServer.client, maxAvailableId)
+            createInstanceIdRegistry(20, testingServer.client, maxAvailableId).register("app")
         }
 
         assertThrows(AssertionError::class.java) {
-            createInstanceIdRegistry(UUID.randomUUID().toString(), 20, testingServer.client, maxAvailableId)
+            createInstanceIdRegistry(20, testingServer.client, maxAvailableId).register("app")
         }
 
-        println(zkTree())
+        logger.info(zkTree())
         val uniqueInstanceIds = testingServer.client.children
-                .forPath("$rootPath/services")
+                .forPath(ZKPaths.makePath(rootPath, "services"))
                 .map { it.substringAfterLast("/").toInt() }
                 .toSet()
 
@@ -104,32 +139,13 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
 
     @Test
     fun `close of instance id registry should release lock`() {
-        val instances = listOf(
-                createInstanceIdRegistry("abs-rate")
-        )
+        val registry = createInstanceIdRegistry()
 
-        println(zkTree())
-        assertEquals("1", instances[0].instanceId)
-        instances[0].close()
-        println(zkTree())
+        assertEquals("1", registry.register("app"))
+        registry.close()
+        logger.info(zkTree())
+
         Thread.sleep(6000)
-        println(zkTree())
-
-    }
-
-    @Test
-    fun `1`() {
-        val limit = 32
-        List(limit) {
-            createInstanceIdRegistry(maxInstancesCount = limit)
-        }.forEachIndexed { index, instance ->
-            assertEquals(index + 1, instance.instanceId.toInt())
-        }
-
-        var instanceOverLimit: ServiceInstanceIdRegistry? = null
-        assertThrows(java.lang.AssertionError::class.java) {
-            instanceOverLimit = createInstanceIdRegistry(maxInstancesCount = limit)
-        }
-        assertNull(instanceOverLimit)
+        logger.info(zkTree())
     }
 }

@@ -10,7 +10,7 @@ import ru.fix.zookeeper.testing.ZKTestingServer
 
 internal class ZkTreePrinterTest{
 
-    lateinit var zkServer: ZKTestingServer
+    private lateinit var zkServer: ZKTestingServer
 
     @BeforeEach
     fun startZkTestingServer() {
@@ -34,7 +34,7 @@ internal class ZkTreePrinterTest{
     @Test
     fun `print root with two children`() {
         for(path in listOf("/child1", "/child2")){
-            zkServer.client.create().creatingParentsIfNeeded().forPath("$path")
+            zkServer.client.create().creatingParentsIfNeeded().forPath(path)
         }
         val dump = ZkTreePrinter(zkServer.client).print("/")
         println(dump)

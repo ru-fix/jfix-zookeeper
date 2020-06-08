@@ -3,6 +3,7 @@ package ru.fix.zookeeper.instance.registry
 import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.framework.state.ConnectionState
 import org.apache.curator.framework.state.ConnectionStateListener
+import org.apache.curator.utils.ZKPaths
 import org.apache.zookeeper.KeeperException
 import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.Profiler
@@ -15,13 +16,13 @@ import ru.fix.zookeeper.utils.Marshaller
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.ConcurrentSkipListSet
 
 /**
- * This class provides functionality of instance id management.
- * When this class instantiated, it generates new instance id for this zookeeper client and registers this id in znode.
- * When zookeeper client lost connection, instance will get previous instance after reconnection.
- * If new client connected, if disconnect timeout expired and client's config.host and config.port already contains in znodes,
- * it is seen as instance restart, and in this case instance get instance id, already contained in zk.
+ * This class provides functionality of instance id registration.
+ * When this class instantiated, it create service registration path (if not created).
+ * When zookeeper client lost connection, instance will get previous instance after reconnection
+ * if  disconnect timeout not expired.
  * Service registration guarantees uniqueness of instance id in case of parallel startup on different JVMs.
  */
 class ServiceInstanceIdRegistry(
@@ -30,16 +31,12 @@ class ServiceInstanceIdRegistry(
         private val config: ServiceInstanceIdRegistryConfig,
         profiler: Profiler
 ) : AutoCloseable {
-    lateinit var lockIdentity: LockIdentity
-        private set
-    lateinit var instanceIdPath: String
-        private set
-    lateinit var instanceId: String
-        private set
 
     companion object {
         private val logger = LoggerFactory.getLogger(ServiceInstanceIdRegistry::class.java)
     }
+
+    private val registeredInstanceIdLocks: MutableSet<LockIdentity> = ConcurrentSkipListSet()
 
     private val lockManager: PersistentExpiringLockManager = PersistentExpiringLockManager(
             curatorFramework,
@@ -65,7 +62,38 @@ class ServiceInstanceIdRegistry(
                             }
                         })
         initServiceRegistrationPath()
-        initInstanceId()
+    }
+
+    /**
+     * @param serviceName name of service should be registered
+     * @return generated instance id for registered service
+     */
+    fun register(serviceName: String): String {
+        for (i in 1..config.countRegistrationAttempts) {
+            val alreadyRegisteredInstanceIds = curatorFramework.children.forPath(config.serviceRegistrationPath)
+            val preparedInstanceId = instanceIdGenerator.nextId(alreadyRegisteredInstanceIds)
+
+            val instanceIdPath = ZKPaths.makePath(config.serviceRegistrationPath, preparedInstanceId)
+            val instanceIdData = InstanceIdData(serviceName, Instant.now())
+            val lockIdentity = LockIdentity(instanceIdPath, Marshaller.marshall(instanceIdData))
+
+            val result = lockManager.tryAcquire(lockIdentity) { lock ->
+                logger.warn("Failed to prolong lock=$lock for service=$serviceName")
+            }
+            if (result) {
+                registeredInstanceIdLocks.add(lockIdentity)
+                logger.info("Instance of service=$serviceName started with id=$preparedInstanceId")
+                return preparedInstanceId
+            } else if (i == config.countRegistrationAttempts) {
+                logger.error("Failed to register service=$serviceName. " +
+                        "Limit=${config.countRegistrationAttempts} of instance id registration reached. " +
+                        "Last try to get instance id was instanceId=$preparedInstanceId. " +
+                        "Current registration node state: " +
+                        ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
+                )
+            }
+        }
+        throw Exception("Failed to register service=$serviceName.")
     }
 
     private fun initServiceRegistrationPath() {
@@ -74,122 +102,60 @@ class ServiceInstanceIdRegistry(
                     .creatingParentsIfNeeded()
                     .forPath(config.serviceRegistrationPath, byteArrayOf())
         } catch (e: KeeperException.NodeExistsException) {
-            logger.debug("Node ${config.serviceRegistrationPath} is already initialized", e)
+            logger.debug("Node with path=${config.serviceRegistrationPath} is already initialized", e)
         } catch (e: Exception) {
             logger.error("Illegal state when create path: ${config.serviceRegistrationPath}", e)
+            throw e
         }
-    }
-
-    /**
-     * Try {@link #config.countRegistrationAttempts} times to register instance.
-     * If this is client with host and port, that already contains in instance's znodes, and timeout of this lock expired,
-     * this situation seen as reconnect of instance, and previous instance id will be got.
-     * Generate instance id, this id should be in range 1..maxInstancesCount, assertion error will be thrown otherwise.
-     * If unsuccessful, then log error
-     */
-    private fun initInstanceId() {
-        for (i in 1..config.countRegistrationAttempts) {
-            val alreadyRegisteredInstanceIds = curatorFramework.children.forPath(config.serviceRegistrationPath)
-            val preparedInstanceId = resolvePreviousConnection(alreadyRegisteredInstanceIds)
-                    ?: instanceIdGenerator.nextId(alreadyRegisteredInstanceIds)
-
-            val instanceIdPath = "${config.serviceRegistrationPath}/$preparedInstanceId"
-            val instanceIdData = InstanceIdData(config.serviceName, Instant.now(), host = config.host, port = config.port)
-            val lockIdentity = LockIdentity(instanceIdPath, Marshaller.marshall(instanceIdData))
-
-            val result = lockManager.tryAcquire(lockIdentity) { lock ->
-                logger.debug("Failed to initialize service id registry and generate instance id. " +
-                        "Lock id: ${Marshaller.marshall(lock)}. " +
-                        "Current registration node state: " +
-                        ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
-                )
-            }
-            if (result) {
-                this.instanceIdPath = instanceIdPath
-                this.instanceId = preparedInstanceId
-                this.lockIdentity = lockIdentity
-
-                logger.info("Instance started with id=$instanceId")
-                break
-            } else if (i == config.countRegistrationAttempts) {
-                logger.error("Failed to initialize instance id registry and get instance id. " +
-                        "Limit=${config.countRegistrationAttempts} of instance id registration reached. " +
-                        "Last try to get instance id was instanceId=$instanceId. " +
-                        "Current registration node state: " +
-                        ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
-                )
-            }
-        }
-    }
-
-    /**
-     * @return previous instance id if host and port of client same with data in zk node
-     * and lock of this instance id expired, and null otherwise
-     */
-    private fun resolvePreviousConnection(alreadyRegisteredInstanceIds: List<String>): String? {
-        alreadyRegisteredInstanceIds.forEach ids@{
-            val path = "${config.serviceRegistrationPath}/$it"
-            val lockData = Marshaller.unmarshall(
-                    curatorFramework.data.forPath(path).toString(Charsets.UTF_8),
-                    LockData::class.java)
-
-            if (lockData.metadata == null) {
-                return@ids
-            }
-            val instanceIdData = Marshaller.unmarshall(lockData.metadata, InstanceIdData::class.java)
-            if (instanceIdData.host != config.host || instanceIdData.port != config.port) {
-                return@ids
-            }
-
-            if (lockData.expirationTimestamp.plus(config.disconnectTimeout).isBefore(Instant.now())) {
-                logger.info("Instance started with host=${config.host} and port=${config.port}, " +
-                        "disconnection timeout=${config.disconnectTimeout} not reached. Instance got id=$it")
-                return it
-            }
-        }
-        return null
     }
 
     private fun reconnect() {
-        try {
-            logger.info("Client reconnected after connection issues")
-            val lockData = Marshaller.unmarshall(
-                    curatorFramework.data.forPath(instanceIdPath).toString(Charsets.UTF_8),
-                    LockData::class.java
-            )
-            when (lockData.metadata) {
-                null -> {
-                    logger.warn("ServiceInstanceIdRegistry reconnected, " +
-                            "but lock for its instance id=$instanceId not found.")
-                }
-                else -> {
-                    lockManager.release(lockIdentity)
-                    if (lockManager.tryAcquire(lockIdentity) {
-                                logger.error("Failed to acquire lock of instance id after reconnect " +
-                                        "Lock id: ${Marshaller.marshall(it)}. " +
-                                        "Current registration node state: " +
-                                        ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
-                                )
-                            }) {
-                        logger.info("ServiceInstanceIdRegistry client reconnected after connection issues " +
-                                "and got its previous instance id=$instanceId that have before reconnection")
-                    } else {
-                        logger.error("Can't get previous instance id=$instanceId after reconnection")
+        registeredInstanceIdLocks.forEach { lockIdentity ->
+            val instanceId = ZKPaths.getNodeFromPath(lockIdentity.nodePath)
+            try {
+                logger.info("Client reconnected after connection issues")
+
+                val instanceIdNodeData = curatorFramework.data.forPath(lockIdentity.nodePath).toString(Charsets.UTF_8)
+                val lockData = Marshaller.unmarshall(instanceIdNodeData, LockData::class.java)
+                when (lockData.metadata) {
+                    null -> {
+                        logger.warn("ServiceInstanceIdRegistry reconnected, " +
+                                "but lock for its instance id=$instanceId not found.")
+                    }
+                    else -> {
+                        if (lockData.expirationTimestamp.plus(config.disconnectTimeout).isBefore(Instant.now())) {
+                            logger.error("Failed to reconnect with same instance id. Disconnect timeout expired!")
+                            return@forEach
+                        }
+
+                        if (lockManager.tryAcquire(lockIdentity) { logger.warn("Failed to prolong lock=$it}") }) {
+                            logger.info("ServiceInstanceIdRegistry client reconnected after connection issues " +
+                                    "and got its previous instance id=$instanceId that have before reconnection")
+                        } else {
+                            logger.error("Can't get previous instance id=$instanceId after reconnection." +
+                                    "Lock id: ${Marshaller.marshall(lockIdentity)}. " +
+                                    "Current registration node state: " +
+                                    ZkTreePrinter(curatorFramework).print(config.serviceRegistrationPath, true)
+                            )
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                logger.error("Error during reconnection of instance id registry", e)
             }
-        } catch (e: Exception) {
-            logger.error("Error during reconnection of instance id registry", e)
         }
     }
 
     override fun close() {
         try {
-            lockManager.release(lockIdentity)
+            registeredInstanceIdLocks.forEach { lockIdentity ->
+                lockManager.release(lockIdentity)
+            }
+            registeredInstanceIdLocks.clear()
             lockManager.close()
-            logger.info("Instance id registry with instanceId=$instanceId closed successfully")
+            logger.info("Instance id registry with closed successfully.")
         } catch (e: Exception) {
-            logger.error("Error during instance id registry with instanceId=$instanceId close ", e)
+            logger.error("Error during instance id registry close.")
         }
     }
 }

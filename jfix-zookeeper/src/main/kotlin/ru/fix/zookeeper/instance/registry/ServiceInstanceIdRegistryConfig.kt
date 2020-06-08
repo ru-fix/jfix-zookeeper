@@ -8,11 +8,10 @@ class ServiceInstanceIdRegistryConfig(
         /**
          * Timeout during which the client can be disconnected and didn't lost instance id, that was before reconnection.
          */
-        val disconnectTimeout: Duration = Duration.ofSeconds(60),
         val persistentExpiringLockManagerConfig: PersistentExpiringLockManagerConfig = PersistentExpiringLockManagerConfig(
-                lockAcquirePeriod = disconnectTimeout.dividedBy(2),
-                expirationPeriod = disconnectTimeout.dividedBy(3),
-                lockCheckAndProlongInterval = disconnectTimeout.dividedBy(4),
+                lockAcquirePeriod = Duration.ofSeconds(90),
+                expirationPeriod = Duration.ofSeconds(30),
+                lockCheckAndProlongInterval =  Duration.ofSeconds(10),
                 acquiringTimeout = Duration.ofSeconds(1)
         )
 )

@@ -112,18 +112,13 @@ class ServiceInstanceIdRegistry(
         registeredInstanceIdLocks.forEach { lockIdentity ->
             val instanceId = ZKPaths.getNodeFromPath(lockIdentity.nodePath)
             try {
-                logger.info("Client reconnected after connection issues")
-                val lockStateCandidate = lockManager.getLockState(lockIdentity)
-                if (lockStateCandidate.isEmpty) {
-                    logger.error("Lock=$lockIdentity not found")
-                }
-                val lockState = lockStateCandidate.get()
-                if (lockState.expirationTimeStamp.plus(config.get().disconnectTimeout).isBefore(Instant.now())) {
-                    logger.error("Failed to reconnect with same instance id. Disconnect timeout expired!")
-                    return@forEach
-                }
-
-                if (lockManager.tryAcquire(lockIdentity) { logger.warn("Failed to prolong lock=$it}") }) {
+                if (lockManager.tryAcquire(lockIdentity) {
+                            logger.error("Failed to prolong lock=$it after reconnect." +
+                                    "Current registration node state: " +
+                                    ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
+                            )
+                        }
+                ) {
                     logger.info("ServiceInstanceIdRegistry client reconnected after connection issues " +
                             "and got its previous instance id=$instanceId that have before reconnection")
                 } else {

@@ -76,7 +76,6 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
             config = DynamicProperty.of(
                     ServiceInstanceIdRegistryConfig(
                             countRegistrationAttempts = registrationRetryCount,
-                            disconnectTimeout = disconnectTimeout,
                             persistentExpiringLockManagerConfig = PersistentExpiringLockManagerConfig(
                                     lockAcquirePeriod = lockAcquirePeriod,
                                     expirationPeriod = expirationPeriod,

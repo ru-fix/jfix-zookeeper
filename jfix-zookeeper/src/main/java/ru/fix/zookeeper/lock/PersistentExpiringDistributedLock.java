@@ -40,14 +40,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     public final class State {
-        private final Instant expirationTimeStamp;
         private final boolean isOwn;
         private final boolean isExpired;
 
-        private State(boolean isOwn, boolean isExpired, Instant expirationTimeStamp) {
+        private State(boolean isOwn, boolean isExpired) {
             this.isOwn = isOwn;
             this.isExpired = isExpired;
-            this.expirationTimeStamp = expirationTimeStamp;
         }
 
         public boolean isExpired() {
@@ -58,9 +56,6 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             return isOwn;
         }
 
-        public Instant getExpirationTimeStamp() {
-            return expirationTimeStamp;
-        }
     }
 
     private static final class LockWatcher implements AutoCloseable {
@@ -338,9 +333,9 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
 
-            return new State(lockData.isOwnedBy(uuid), lockData.isExpired(), lockData.getExpirationTimestamp());
+            return new State(lockData.isOwnedBy(uuid), lockData.isExpired());
         } catch (KeeperException.NoNodeException noNodeException) {
-            return new State(false, true, Instant.MIN);
+            return new State(false, true);
         }
     }
 

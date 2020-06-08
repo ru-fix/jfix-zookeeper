@@ -44,11 +44,6 @@ data class LockData(
     }
 
     @JsonIgnore
-    fun isExpiredWithTimeout(timeout: Duration): Boolean {
-        return expirationTimestamp.plus(timeout).isBefore(Instant.now())
-    }
-
-    @JsonIgnore
     fun isExpired(): Boolean {
         return expirationTimestamp.isBefore(Instant.now())
     }

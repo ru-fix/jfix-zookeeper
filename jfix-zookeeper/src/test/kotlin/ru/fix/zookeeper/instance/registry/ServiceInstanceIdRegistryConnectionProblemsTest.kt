@@ -3,7 +3,6 @@ package ru.fix.zookeeper.instance.registry
 import org.apache.logging.log4j.kotlin.logger
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.netcrusher.core.reactor.NioReactor
 import org.netcrusher.tcp.TcpCrusher
@@ -17,14 +16,14 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
 
     @Test
     fun `client lost connection and reconnect with same instance id when disconnect timeout didn't reached`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
+        val lockAcquirePeriod = Duration.ofSeconds(4)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
         val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
 
         val instanceIds = listOf(
-                createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout).register("abs-rate"),
+                createInstanceIdRegistry(client = proxyClient, lockAcquirePeriod = lockAcquirePeriod).register("abs-rate"),
                 createInstanceIdRegistry().register("abs-rate"),
                 createInstanceIdRegistry().register("drugkeeper")
         )
@@ -38,8 +37,8 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
                 .until { !proxyClient.zookeeperClient.isConnected }
         logger.info(zkTree())
 
-        Thread.sleep(disconnectTimeout.toMillis() / 2)
-        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), disconnectTimeout)
+        Thread.sleep(lockAcquirePeriod.toMillis() / 2)
+        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), lockAcquirePeriod)
 
         crusher.unfreeze()
         Thread.sleep(3000)
@@ -53,14 +52,14 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
 
     @Test
     fun `client disconnected, disconnect timeout not reached, register new service with new instance id`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
+        val lockAcquirePeriod = Duration.ofSeconds(4)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
         val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
 
         val instances = mutableListOf(
-                createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout).register("abs-rate"),
+                createInstanceIdRegistry(client = proxyClient, lockAcquirePeriod = lockAcquirePeriod).register("abs-rate"),
                 createInstanceIdRegistry().register("abs-rate"),
                 createInstanceIdRegistry().register("drugkeeper")
         )
@@ -74,26 +73,26 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
                 .until { !proxyClient.zookeeperClient.isConnected }
 
         logger.info(zkTree())
-        Thread.sleep(disconnectTimeout.toMillis() / 2)
+        Thread.sleep(lockAcquirePeriod.toMillis() / 2)
         logger.info(zkTree())
-        assertFalse(isInstanceIdLockExpired("1", disconnectTimeout))
+        assertFalse(isInstanceIdLockExpired("1", lockAcquirePeriod))
 
         val registry = createInstanceIdRegistry()
         registry.register("extra-service")
         logger.info(zkTree())
 
-        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true, "4" to true), disconnectTimeout)
+        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true, "4" to true), lockAcquirePeriod)
 
+        Thread.sleep(lockAcquirePeriod.toMillis() / 2)
         crusher.unfreeze()
-        Thread.sleep(disconnectTimeout.toMillis() / 2)
         logger.info(zkTree())
 
-        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true, "4" to true), disconnectTimeout)
+        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true, "4" to true), lockAcquirePeriod)
     }
 
     @Test
-    fun `client disconnected, disconnect timeout reached, register new another service with free instance id`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
+    fun `client disconnected, instance id's lock expired, register new another service with instance id of expired lock`() {
+        val lockAcquirePeriod = Duration.ofSeconds(4)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
@@ -101,7 +100,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         val instances = mutableListOf(
                 createInstanceIdRegistry(
                         client = proxyClient,
-                        disconnectTimeout = disconnectTimeout
+                        lockAcquirePeriod = lockAcquirePeriod
                 ).register("abs-rate"),
                 createInstanceIdRegistry().register("abs-rate"),
                 createInstanceIdRegistry().register("drugkeeper")
@@ -116,32 +115,32 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
                 .until { !proxyClient.zookeeperClient.isConnected }
 
         logger.info(zkTree())
-        Thread.sleep(disconnectTimeout.toMillis() * 2)
+        Thread.sleep(lockAcquirePeriod.toMillis() * 2)
 
         logger.info(zkTree())
-        assertTrue(isInstanceIdLockExpired("1", disconnectTimeout))
+        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to true, "3" to true), lockAcquirePeriod)
 
         val client = testingServer.createClient()
-        createInstanceIdRegistry(client = client, disconnectTimeout = disconnectTimeout).register("wow-service")
+        createInstanceIdRegistry(client = client, lockAcquirePeriod = lockAcquirePeriod).register("wow-service")
         await()
                 .timeout(Duration.ofSeconds(1))
                 .until { client.zookeeperClient.isConnected }
         logger.info(zkTree())
 
-        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to true, "3" to true, "4" to true), disconnectTimeout)
+        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), lockAcquirePeriod)
 
         crusher.close()
     }
 
     @Test
     fun `prolongation of instance id's lock works fine after reconnect`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
+        val lockAcquirePeriod = Duration.ofSeconds(4)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
         val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
 
-        createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout).register("app")
+        createInstanceIdRegistry(client = proxyClient, lockAcquirePeriod = lockAcquirePeriod).register("app")
 
         logger.info(zkTree())
         assertInstances(mapOf("app" to setOf("1")))
@@ -149,15 +148,15 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         crusher.reopen()
         logger.info(zkTree())
 
-        Thread.sleep(disconnectTimeout.toMillis())
+        Thread.sleep(lockAcquirePeriod.toMillis())
         logger.info(zkTree())
         assertInstances(mapOf("app" to setOf("1")))
-        assertFalse(isInstanceIdLockExpired("1", disconnectTimeout))
+        assertFalse(isInstanceIdLockExpired("1", lockAcquirePeriod))
     }
 
     @Test
-    fun `instances registered by same service have all expired locks after connection lost and timeout reached`() {
-        val disconnectTimeout = Duration.ofSeconds(2)
+    fun `instances registered by same service have all expired locks after connection lost and all prolonged after reconnect`() {
+        val lockAcquirePeriod = Duration.ofSeconds(3)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
@@ -165,8 +164,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
 
         val registry = createInstanceIdRegistry(
                 client = proxyClient,
-                disconnectTimeout = disconnectTimeout,
-                lockAcquirePeriod = Duration.ofSeconds(1),
+                lockAcquirePeriod = lockAcquirePeriod,
                 expirationPeriod = Duration.ofMillis(500),
                 lockCheckAndProlongInterval = Duration.ofMillis(300)
         )
@@ -176,16 +174,19 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
 
         logger.info(zkTree())
         assertInstances(mapOf("app" to setOf("1", "2", "3")))
-        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), disconnectTimeout)
+        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), lockAcquirePeriod)
 
         crusher.freeze()
-        Thread.sleep(disconnectTimeout.toMillis() * 2)
+        Thread.sleep(lockAcquirePeriod.toMillis() * 2)
         logger.info(zkTree())
-        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to false, "3" to false), disconnectTimeout)
+        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to false, "3" to false), lockAcquirePeriod)
 
         crusher.unfreeze()
+        await()
+                .timeout(Duration.ofSeconds(2))
+                .until { proxyClient.zookeeperClient.isConnected }
         logger.info(zkTree())
-        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to false, "3" to false), disconnectTimeout)
+        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), lockAcquirePeriod)
     }
 
     private fun tcpCrusher(proxyPort: Int): TcpCrusher =

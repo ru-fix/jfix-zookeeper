@@ -42,13 +42,13 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
 
     @Test
     fun `curator closed, instance id registry can't prolong lock of instance id`() {
-        val disconnectTimeout = Duration.ofSeconds(5)
+        val lockAcquirePeriod = Duration.ofSeconds(5)
         val client = testingServer.createClient()
         val client2 = testingServer.createClient()
 
-        createInstanceIdRegistry(client = client, disconnectTimeout = disconnectTimeout).register("abs-rate")
-        createInstanceIdRegistry(disconnectTimeout = disconnectTimeout).register("abs-rate")
-        createInstanceIdRegistry(client = client2, disconnectTimeout = disconnectTimeout).register("drugkeeper")
+        createInstanceIdRegistry(client = client, lockAcquirePeriod = lockAcquirePeriod).register("abs-rate")
+        createInstanceIdRegistry(lockAcquirePeriod = lockAcquirePeriod).register("abs-rate")
+        createInstanceIdRegistry(client = client2, lockAcquirePeriod = lockAcquirePeriod).register("drugkeeper")
 
         logger.info(zkTree())
         assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
@@ -59,9 +59,9 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
                 .timeout(Duration.ofSeconds(1))
                 .until { !client.zookeeperClient.isConnected }
 
-        Thread.sleep(disconnectTimeout.multipliedBy(2).toMillis())
+        Thread.sleep(lockAcquirePeriod.multipliedBy(2).toMillis())
         logger.info(zkTree())
-        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to true, "3" to true), disconnectTimeout)
+        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to true, "3" to true), lockAcquirePeriod)
     }
 
     @Test

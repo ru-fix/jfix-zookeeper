@@ -62,7 +62,7 @@ class ServiceInstanceIdRegistry(
     fun register(serviceName: String): String {
         val registrationAttempts = config.get().countRegistrationAttempts
         for (i in 1..registrationAttempts) {
-            val alreadyRegisteredInstanceIds = curatorFramework.children.forPath(serviceRegistrationPath)
+            val alreadyRegisteredInstanceIds = lockManager.getNonExpiredLockNodesByPath(serviceRegistrationPath)
             val preparedInstanceId = instanceIdGenerator.nextId(alreadyRegisteredInstanceIds)
 
             val instanceIdPath = ZKPaths.makePath(serviceRegistrationPath, preparedInstanceId)

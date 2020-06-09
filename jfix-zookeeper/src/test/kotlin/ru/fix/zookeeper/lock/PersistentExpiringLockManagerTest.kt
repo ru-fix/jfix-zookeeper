@@ -6,6 +6,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import org.apache.curator.framework.state.ConnectionState
 import org.apache.curator.utils.ZKPaths
 import org.apache.logging.log4j.kotlin.logger
 import org.awaitility.Awaitility.await
@@ -99,6 +100,16 @@ internal class PersistentExpiringLockManagerTest {
     }
 
     @Test
+    fun `first manager release lock, second manager acquires same lock`() {
+        val lockId = createLockIdentity()
+
+        manager1.tryAcquire(lockId) { fail() }.shouldBeTrue()
+        manager2.tryAcquire(lockId) { fail() }.shouldBeFalse()
+        manager1.release(lockId)
+        manager2.tryAcquire(lockId) { fail()}.shouldBeTrue()
+    }
+
+    @Test
     fun `lock node created after acquiring and removed after releasing lock`() {
         val lockId = LockIdentity("/lock-1", "/locks/lock-1")
         manager1.tryAcquire(lockId) { fail() }
@@ -156,6 +167,7 @@ internal class PersistentExpiringLockManagerTest {
         fastFrequentManager.close()
     }
 
+
     @Test
     fun `acquire and release 30 different locks in parallel`() = runBlocking {
         val locksPath = "/locks" + nextId()
@@ -192,6 +204,30 @@ internal class PersistentExpiringLockManagerTest {
         }.awaitAll()
 
         assertEquals(0, zkServer.client.children.forPath(locksPath).size)
+    }
+
+    @Test
+    fun `connection lost, lock expired, manager prolongs expired but owned lock`(){
+
+        val proxyTcpCrusher = openProxyTcpCrusher()
+        val zkProxyClient = createZkProxyClient(proxyTcpCrusher)
+        val zkProxyState = startWatchZkProxyClientState(zkProxyClient)
+
+        val id = idSequence.get()
+        val lock1 = PersistentExpiringDistributedLock(zkProxyClient, LockIdentity(lockPath(id)))
+        lock1.expirableAcquire(Duration.ofSeconds(100), Duration.ofSeconds(1)).shouldBeTrue()
+
+        networkFailure.activate(proxyTcpCrusher)
+        await().atMost(10, MINUTES).until { zkProxyState.get() == ConnectionState.LOST }
+
+        val lock2 = PersistentExpiringDistributedLock(zkServer.client, LockIdentity(lockPath(id)))
+        lock2.expirableAcquire(Duration.ofMillis(100), Duration.ofMillis(100)).shouldBeFalse()
+        lock2.close()
+    }
+
+    @Test
+    fun `connection lost, lock expired, manager fails to prolong lock and notifies client with callback`() {
+
     }
 
     private fun createLockIdentity(id: Int = nextId()) =

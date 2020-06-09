@@ -111,26 +111,23 @@ class ServiceInstanceIdRegistry(
     private fun reconnect() {
         registeredInstanceIdLocks.forEach { lockIdentity ->
             val instanceId = ZKPaths.getNodeFromPath(lockIdentity.nodePath)
-            try {
-                if (lockManager.tryAcquire(lockIdentity) {
-                            logger.error("Failed to prolong lock=$it after reconnect." +
-                                    "Current registration node state: " +
-                                    ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
-                            )
-                        }
-                ) {
-                    logger.info("ServiceInstanceIdRegistry client reconnected after connection issues " +
-                            "and got its previous instance id=$instanceId that have before reconnection")
-                } else {
-                    logger.error("Can't get previous instance id=$instanceId after reconnection." +
-                            "Lock id: ${Marshaller.marshall(lockIdentity)}. " +
-                            "Current registration node state: " +
-                            ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
-                    )
-                }
-            } catch (e: Exception) {
-                logger.error("Error during reconnection of instance id registry", e)
+            if (lockManager.tryAcquire(lockIdentity) {
+                        logger.error("Failed to prolong lock=$it after reconnect." +
+                                "Current registration node state: " +
+                                ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
+                        )
+                    }
+            ) {
+                logger.info("ServiceInstanceIdRegistry client reconnected after connection issues " +
+                        "and got its previous instance id=$instanceId that have before reconnection")
+            } else {
+                logger.error("Can't get previous instance id=$instanceId after reconnection. " +
+                        "Probably lock of this instance was expired and new service was registered with this instance id. " +
+                        "Lock id: $lockIdentity. Current registration node state: " +
+                        ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
+                )
             }
+
         }
     }
 

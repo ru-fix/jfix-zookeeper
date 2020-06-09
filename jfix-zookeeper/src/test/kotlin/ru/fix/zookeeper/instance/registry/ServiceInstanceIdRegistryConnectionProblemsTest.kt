@@ -21,7 +21,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
+        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
 
         val instanceIds = listOf(
                 createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout).register("abs-rate"),
@@ -57,7 +57,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
+        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
 
         val instances = mutableListOf(
                 createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout).register("abs-rate"),
@@ -97,7 +97,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
+        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
         val instances = mutableListOf(
                 createInstanceIdRegistry(
                         client = proxyClient,
@@ -139,7 +139,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
+        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
 
         createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout).register("app")
 
@@ -161,7 +161,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
 
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
+        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
 
         val registry = createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout)
         registry.register("app")

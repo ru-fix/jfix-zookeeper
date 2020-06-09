@@ -17,7 +17,7 @@ object Vers {
     const val slf4j = "1.7.30"
     const val log4j = "2.13.2"
     const val jfix_stdlib = "3.0.0"
-    const val awaitility = "4.0.2"
+    const val awaitility = "4.0.3"
     const val netcrusher = "0.10"
 }
 

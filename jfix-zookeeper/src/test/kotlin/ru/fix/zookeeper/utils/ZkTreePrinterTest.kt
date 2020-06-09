@@ -15,7 +15,7 @@ internal class ZkTreePrinterTest{
     @BeforeEach
     fun startZkTestingServer() {
         zkServer = ZKTestingServer()
-                .withCloseOnJvmShutdown(true)
+                .withCloseOnJvmShutdown()
                 .start()
     }
 

@@ -15,7 +15,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
     private val reactor: NioReactor = NioReactor()
 
     @Test
-    fun `client lost connection and reconnect with same instance id when disconnect timeout didn't reached`() {
+    fun `client lost connection and reconnect with same instance id when lock of this instance id not expired`() {
         val lockAcquirePeriod = Duration.ofSeconds(4)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)
@@ -51,7 +51,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
     }
 
     @Test
-    fun `client disconnected, disconnect timeout not reached, register new service with new instance id`() {
+    fun `client disconnected, lock of this instance id not expired, register new service with new instance id`() {
         val lockAcquirePeriod = Duration.ofSeconds(4)
         val proxyPort = SocketChecker.getAvailableRandomPort()
         val crusher = tcpCrusher(proxyPort)

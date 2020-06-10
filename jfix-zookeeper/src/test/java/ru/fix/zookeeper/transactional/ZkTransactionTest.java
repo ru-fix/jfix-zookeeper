@@ -23,7 +23,7 @@ public class ZkTransactionTest {
     @BeforeEach
     public void startZkServer() throws Exception {
         zkServer = new ZKTestingServer()
-                .withCloseOnJvmShutdown(true);
+                .withCloseOnJvmShutdown();
         zkServer.start();
     }
 

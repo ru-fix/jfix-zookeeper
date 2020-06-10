@@ -6,6 +6,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.utils.ZKPaths
 import org.apache.logging.log4j.kotlin.logger
 import org.awaitility.Awaitility.await
@@ -20,6 +21,7 @@ import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.time.Duration
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MINUTES
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 internal class PersistentExpiringLockManagerTest {
@@ -38,7 +40,7 @@ internal class PersistentExpiringLockManagerTest {
     @BeforeEach
     fun `start zk and create managers`() {
         zkServer = ZKTestingServer()
-                .withCloseOnJvmShutdown(true)
+                .withCloseOnJvmShutdown()
                 .start()
 
         manager1 = createLockManager()
@@ -56,22 +58,32 @@ internal class PersistentExpiringLockManagerTest {
     @Test
     fun `acquire and release lock`() {
         val lockId = createLockIdentity()
-        manager1.tryAcquire(lockId) { fail() }.shouldBeTrue()
+        val callbackFailed = AtomicBoolean()
+
+        manager1.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
         manager1.release(lockId)
+
+        callbackFailed.get().shouldBeFalse()
     }
 
     @Test
     fun `after acquiring lock is managed`() {
         val lockId = createLockIdentity()
-        manager1.tryAcquire(lockId) { fail() }.shouldBeTrue()
+        val callbackFailed = AtomicBoolean()
+
+        manager1.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
         manager1.isLockManaged(lockId).shouldBeTrue()
         manager1.release(lockId)
+
+        callbackFailed.get().shouldBeFalse()
     }
 
     @Test
     fun `after acquiring lock state is owned and not expired`() {
         val lockId = createLockIdentity()
-        manager1.tryAcquire(lockId) { fail() }.shouldBeTrue()
+        val callbackFailed = AtomicBoolean()
+
+        manager1.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
         manager1.getLockState(lockId).apply {
             isPresent.shouldBeTrue()
             get().apply {
@@ -80,28 +92,52 @@ internal class PersistentExpiringLockManagerTest {
             }
         }
         manager1.release(lockId)
+
+        callbackFailed.get().shouldBeFalse()
     }
 
     @Test
     fun `can not acquire already acquired lock`() {
         val lockId = createLockIdentity()
-        manager1.tryAcquire(lockId) { fail() }.shouldBeTrue()
-        manager1.tryAcquire(lockId) { fail() }.shouldBeFalse()
+        val callbackFailed = AtomicBoolean()
+
+        manager1.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
+        manager1.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeFalse()
+
+        callbackFailed.get().shouldBeFalse()
     }
 
     @Test
     fun `first manager acquires lock, second manager fails to acquire same lock`() {
         val lockId = createLockIdentity()
+        val callbackFailed = AtomicBoolean()
 
-        manager1.tryAcquire(lockId) { fail() }.shouldBeTrue()
-        manager2.tryAcquire(lockId) { fail() }.shouldBeFalse()
+        manager1.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
+        manager2.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeFalse()
         manager1.release(lockId)
+
+        callbackFailed.get().shouldBeFalse()
+    }
+
+    @Test
+    fun `first manager release lock, second manager acquires same lock`() {
+        val lockId = createLockIdentity()
+        val callbackFailed = AtomicBoolean()
+
+        manager1.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
+        manager2.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeFalse()
+        manager1.release(lockId)
+        manager2.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
+
+        callbackFailed.get().shouldBeFalse()
     }
 
     @Test
     fun `lock node created after acquiring and removed after releasing lock`() {
         val lockId = LockIdentity("/lock-1", "/locks/lock-1")
-        manager1.tryAcquire(lockId) { fail() }
+        val callbackFailed = AtomicBoolean()
+
+        manager1.tryAcquire(lockId) { callbackFailed.set(true) }
 
         logger.info("After acquiring lock: \n" + zkTree())
         nodeExists(lockId.nodePath).shouldBeTrue()
@@ -109,6 +145,8 @@ internal class PersistentExpiringLockManagerTest {
         manager1.release(lockId)
         logger.info("After releasing lock: \n" + zkTree())
         nodeExists(lockId.nodePath).shouldBeFalse()
+
+        callbackFailed.get().shouldBeFalse()
     }
 
 
@@ -116,8 +154,10 @@ internal class PersistentExpiringLockManagerTest {
     fun `locks nodes removed after close of zk client connection`() {
         val lockId1 = LockIdentity("/lock-1", "/locks/lock-1")
         val lockId2 = LockIdentity("/lock-2", "/locks/lock-2")
-        manager1.tryAcquire(lockId1) { fail() }
-        manager1.tryAcquire(lockId2) { fail() }
+        val callbackFailed = AtomicBoolean()
+
+        manager1.tryAcquire(lockId1) { callbackFailed.set(true) }
+        manager1.tryAcquire(lockId2) { callbackFailed.set(true) }
 
         logger.info("After acquiring locks: \n" + zkTree())
         nodeExists(lockId1.nodePath).shouldBeTrue()
@@ -127,18 +167,22 @@ internal class PersistentExpiringLockManagerTest {
         logger.info("After closing lock manager: \n" + zkTree())
         nodeExists(lockId1.nodePath).shouldBeFalse()
         nodeExists(lockId2.nodePath).shouldBeFalse()
+
+        callbackFailed.get().shouldBeFalse()
     }
 
     @Test
     fun `after manager1 lock prolongation, manager2 can not acquire lock`() {
         val lockId = createLockIdentity()
+        val callbackFailed = AtomicBoolean()
+
         val fastFrequentManager = createLockManager(PersistentExpiringLockManagerConfig(
                 lockAcquirePeriod = Duration.ofSeconds(2),
                 expirationPeriod = Duration.ofSeconds(1),
                 lockCheckAndProlongInterval = Duration.ofMillis(100)
         ))
 
-        fastFrequentManager.tryAcquire(lockId) { fail() }.shouldBeTrue()
+        fastFrequentManager.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
 
         val lockData = zkServer.client.data.forPath(lockId.nodePath)
 
@@ -148,19 +192,23 @@ internal class PersistentExpiringLockManagerTest {
             !newLockData!!.contentEquals(lockData)
         }
 
-        manager2.tryAcquire(lockId) { fail() }.shouldBeFalse()
+        manager2.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeFalse()
         fastFrequentManager.release(lockId)
 
-        await().atMost(1, MINUTES).until { manager2.tryAcquire(lockId) { fail() } }
+        await().atMost(1, MINUTES).until { manager2.tryAcquire(lockId) { callbackFailed.set(true) } }
 
         fastFrequentManager.close()
+
+        callbackFailed.get().shouldBeFalse()
     }
+
 
     @Test
     fun `acquire and release 30 different locks in parallel`() = runBlocking {
         val locksPath = "/locks" + nextId()
         fun createLockIdentityForIndex(index: Int) =
                 LockIdentity(ZKPaths.makePath(locksPath, "lock-$index"), "meta: $index")
+        val callbackFailed = AtomicBoolean()
 
         val locksCount = 30
         val dispatcher = Executors.newFixedThreadPool(12).asCoroutineDispatcher()
@@ -172,7 +220,7 @@ internal class PersistentExpiringLockManagerTest {
         lockManagers.mapIndexed { i, it ->
             async(context = dispatcher) {
                 val lockId = createLockIdentityForIndex(i)
-                it.tryAcquire(lockId) { fail() }.shouldBeTrue()
+                it.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
 
                 logger.info("After acquiring lock: \n" + zkTree())
                 assertTrue(nodeExists(lockId.nodePath))
@@ -194,13 +242,43 @@ internal class PersistentExpiringLockManagerTest {
         assertEquals(0, zkServer.client.children.forPath(locksPath).size)
     }
 
+    @Test
+    fun `connection lost, manager failed to prolong and notify client`() {
+        val proxyTcpCrusher = zkServer.openProxyTcpCrusher()
+        val zkProxyClient = zkServer.createZkProxyClient(proxyTcpCrusher)
+
+        val lock = createLockIdentity()
+
+        val proxiedManager = createLockManager(
+                config = PersistentExpiringLockManagerConfig(
+                        lockAcquirePeriod = Duration.ofSeconds(10),
+                        expirationPeriod = Duration.ofSeconds(5),
+                        lockCheckAndProlongInterval = Duration.ofSeconds(1)
+                ),
+                client = zkProxyClient)
+
+        val prolongationFailedEventSlot = AtomicBoolean()
+
+        proxiedManager.tryAcquire(lock) {
+            prolongationFailedEventSlot.set(true)
+
+        }.shouldBeTrue()
+
+        proxyTcpCrusher.close()
+
+        await().atMost(1, MINUTES).until { prolongationFailedEventSlot.get() }
+
+        Thread.sleep(10000)
+    }
+
     private fun createLockIdentity(id: Int = nextId()) =
             LockIdentity(ZKPaths.makePath(LOCK_PATH, id.toString()), "meta: $LOCK_PATH/id")
 
     private fun createLockManager(
-            config: PersistentExpiringLockManagerConfig = PersistentExpiringLockManagerConfig()) =
+            config: PersistentExpiringLockManagerConfig = PersistentExpiringLockManagerConfig(),
+            client: CuratorFramework = zkServer.client) =
             PersistentExpiringLockManager(
-                    zkServer.createClient(),
+                    client,
                     DynamicProperty.of(config),
                     NoopProfiler()
             )

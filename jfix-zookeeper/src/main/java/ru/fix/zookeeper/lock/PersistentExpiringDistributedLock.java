@@ -317,6 +317,10 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
             if (!lockData.isOwnedBy(uuid)) {
                 return false;
             }
+            if (lockData.isExpired()) {
+                logger.warn("Lock expired but still owned {}." +
+                        " Risk to lose lock between prolongation interval.", lockId);
+            }
             return zkTxUpdateLockData(prolongationPeriod, nodeStat);
         } catch (KeeperException.NoNodeException noNodeException) {
             logger.debug("Node already removed while checkAndProlong.", noNodeException);
@@ -339,50 +343,41 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         }
     }
 
-    enum ReleaseResult {
-        /**
-         * Lock was owned and not expired, lock successful released
-         */
-        LOCK_RELEASED,
-        /**
-         * Lock is still owned but already expired, no operation performed
-         */
-        LOCK_STILL_OWNED_BUT_EXPIRED,
-        /**
-         * Lock is not owned or absent
-         */
-        LOCK_IS_LOST,
-    }
-
-
     /**
      * Releases the lock. Has no effect if lock expired, removed or lock is owned by others.
+     * If lock still owned and not expired, lock will be successful released and returned true.
+     * If lock is still owned but already expired, no operation will be performed and returned true.
+     * Warning message will be logged and user should increase prolongation interval
+     * to exclude risk of losing lock.
+     * If lock is not owned or absent, no operation will be perfomed and result will be false.
      *
      * @throws Exception in case of connection or ZK errors
      */
-    public synchronized ReleaseResult release() throws Exception {
+    public synchronized boolean release() throws Exception {
         assertNotClosed();
         try {
             Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
             if (nodeStat == null) {
-                return ReleaseResult.LOCK_IS_LOST;
+                return false;
             }
 
             LockData lockData;
             try {
                 lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
             } catch (KeeperException.NoNodeException e) {
-                logger.debug("Node already removed on release.", e);
-                return ReleaseResult.LOCK_IS_LOST;
+                logger.warn("Releasing lock {} which node already removed.", lockId, e);
+                return false;
             }
 
             // check if we are owner of the lock
             if (!lockData.isOwnedBy(uuid)) {
-                return ReleaseResult.LOCK_IS_LOST;
+                logger.warn("Releasing lock {} that is not owned anymore", lockId);
+                return false;
             }
 
             if (lockData.isExpired()) {
-                return ReleaseResult.LOCK_STILL_OWNED_BUT_EXPIRED;
+                logger.warn("Releasing lock {} that is still owned but expired", lockData);
+                return true;
             }
 
             try {
@@ -392,21 +387,16 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
                         .commit();
 
                 logger.trace("The lock={} has been released", Marshaller.marshall(lockId));
-                return ReleaseResult.LOCK_RELEASED;
+                return true;
 
             } catch (KeeperException.NoNodeException | KeeperException.BadVersionException e) {
-                logger.debug("Node={} already released.", Marshaller.marshall(lockId), e);
-                return ReleaseResult.LOCK_IS_LOST;
+                logger.warn("Releasing lock {} which node is removed or version changed.", lockId, e);
+                return false;
             } finally {
                 expirationDate = Instant.ofEpochMilli(0);
             }
-
-
         } catch (Exception e) {
-            logger.error(
-                    "Failed to release PersistentExpiringDistributedLock with lockId={}",
-                    Marshaller.marshall(lockId), e
-            );
+            logger.error("Failed to release lock {}", lockId, e);
             throw e;
         }
     }

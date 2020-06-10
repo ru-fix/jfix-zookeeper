@@ -242,6 +242,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         await()
                 .timeout(Duration.ofSeconds(2))
                 .until { proxyClient.zookeeperClient.isConnected }
+        Thread.sleep(200)
         logger.info(zkTree())
         assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), lockAcquirePeriod)
     }

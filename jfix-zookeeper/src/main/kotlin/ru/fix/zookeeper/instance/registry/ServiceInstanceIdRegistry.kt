@@ -70,7 +70,9 @@ class ServiceInstanceIdRegistry(
             val lockIdentity = LockIdentity(instanceIdPath, Marshaller.marshall(instanceIdData))
 
             val result = lockManager.tryAcquire(lockIdentity) { lock ->
-                logger.warn("Failed to prolong lock=$lock for service=$serviceName")
+                logger.error("Failed to prolong lock=$lock for service=$serviceName. " +
+                        "Current registration node state: " +
+                        ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true))
             }
             when {
                 result -> {
@@ -112,10 +114,9 @@ class ServiceInstanceIdRegistry(
         registeredInstanceIdLocks.forEach { lockIdentity ->
             val instanceId = ZKPaths.getNodeFromPath(lockIdentity.nodePath)
             if (lockManager.tryAcquire(lockIdentity) {
-                        logger.error("Failed to prolong lock=$it after reconnect." +
+                        logger.error("Failed to prolong lock=$it after reconnect. " +
                                 "Current registration node state: " +
-                                ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
-                        )
+                                ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true))
                     }
             ) {
                 logger.info("ServiceInstanceIdRegistry client reconnected after connection issues " +

@@ -139,11 +139,12 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         val crusher = tcpCrusher(proxyPort)
 
         val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000, 1000)
+        val proxiedInstanceRegistry = createInstanceIdRegistry(
+                client = proxyClient,
+                lockAcquirePeriod = lockAcquirePeriod
+        )
         val instances = mutableListOf(
-                createInstanceIdRegistry(
-                        client = proxyClient,
-                        lockAcquirePeriod = lockAcquirePeriod
-                ).register("abs-rate"),
+                proxiedInstanceRegistry.register("abs-rate"),
                 createInstanceIdRegistry().register("abs-rate"),
                 createInstanceIdRegistry().register("drugkeeper")
         )
@@ -175,8 +176,17 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         await()
                 .timeout(Duration.ofSeconds(2))
                 .until { proxyClient.zookeeperClient.isConnected }
-        // here was error logged
-        Thread.sleep(500)
+        /**
+         *  Here was errors logged with period = lock prolongation interval, because 2 registry manages same instance.
+         *
+         */
+        Thread.sleep(4000)
+
+        proxiedInstanceRegistry.close()
+        /**
+         * No error logs, when reconnected registry closed
+         */
+        Thread.sleep(4000)
     }
 
     @Test

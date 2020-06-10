@@ -139,18 +139,17 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         val crusher = tcpCrusher(proxyPort)
 
         val proxyClient = testingServer.createClient("localhost:$proxyPort", 1000, 1000, 1000)
-        val proxiedInstanceRegistry = createInstanceIdRegistry(
-                client = proxyClient,
-                lockAcquirePeriod = lockAcquirePeriod
-        )
         val instances = mutableListOf(
-                proxiedInstanceRegistry.register("abs-rate"),
-                createInstanceIdRegistry().register("abs-rate"),
-                createInstanceIdRegistry().register("drugkeeper")
+                createInstanceIdRegistry(
+                        client = proxyClient,
+                        lockAcquirePeriod = lockAcquirePeriod
+                ),
+                createInstanceIdRegistry(),
+                createInstanceIdRegistry()
         )
+        instances.forEach { it.register("my-service") }
         logger.info(zkTree())
-        assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
-        assertInstanceIdMapping(setOf(instances[0] to "1", instances[1] to "2", instances[2] to "3"))
+        assertInstances(mapOf("my-service" to setOf("1", "2", "3")))
 
         crusher.freeze()
         await()
@@ -178,7 +177,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
          */
         Thread.sleep(4000)
 
-        proxiedInstanceRegistry.close()
+        instances[0].close()
         /**
          * No error logs, when reconnected registry closed
          */

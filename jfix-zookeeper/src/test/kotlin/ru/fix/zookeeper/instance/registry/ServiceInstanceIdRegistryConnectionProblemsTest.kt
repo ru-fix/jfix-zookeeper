@@ -173,12 +173,8 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), lockAcquirePeriod)
 
         crusher.unfreeze()
-        await()
-                .timeout(Duration.ofSeconds(2))
-                .until { proxyClient.zookeeperClient.isConnected }
         /**
          *  Here was errors logged with period = lock prolongation interval, because 2 registry manages same instance.
-         *
          */
         Thread.sleep(4000)
 

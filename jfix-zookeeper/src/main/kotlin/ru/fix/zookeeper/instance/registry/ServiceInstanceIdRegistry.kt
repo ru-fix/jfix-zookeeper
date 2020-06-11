@@ -96,7 +96,7 @@ class ServiceInstanceIdRegistry(
         }
 
         if (!acquired) {
-            logger.error("Can't get previous instance id=$instanceId after reconnection. " +
+            logger.error("Can't acquire lock of instance id=$instanceId after lock prolongation fail. " +
                     "Probably lock of this instance was expired and new service was registered with this instance id. " +
                     "Lock id: $lockIdentity. Current registration node state: " +
                     ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)

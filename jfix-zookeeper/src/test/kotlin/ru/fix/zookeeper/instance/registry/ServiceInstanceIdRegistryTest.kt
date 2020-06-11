@@ -7,8 +7,7 @@ import kotlinx.coroutines.runBlocking
 import org.apache.curator.utils.ZKPaths
 import org.apache.logging.log4j.kotlin.logger
 import org.awaitility.Awaitility
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.util.*
@@ -132,21 +131,22 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
         logger.info(zkTree())
         val uniqueInstanceIds = testingServer.client.children
                 .forPath(ZKPaths.makePath(rootPath, "services"))
-                .map { it.substringAfterLast("/").toInt() }
+                .map { it.toInt() }
                 .toSet()
 
         assertEquals(maxAvailableId, uniqueInstanceIds.size)
     }
 
     @Test
-    fun `close of instance id registry should release lock`() {
+    fun `close of instance id registry should release locks`() {
         val registry = createInstanceIdRegistry()
 
         assertEquals("1", registry.register("app"))
+        assertEquals("2", registry.register("app"))
         registry.close()
         logger.info(zkTree())
 
         Thread.sleep(6000)
-        logger.info(zkTree())
+        assertTrue(testingServer.client.data.forPath(ZKPaths.makePath(rootPath, "services")).isEmpty())
     }
 }

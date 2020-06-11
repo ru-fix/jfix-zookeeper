@@ -64,8 +64,8 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
     }
 
     @Test
-    fun `parallel startup of 30 different service registries should register services with no collisions`() = runBlocking {
-        val servicesCount = 30
+    fun `parallel startup of 10 different service registries should register services with no collisions`() = runBlocking {
+        val servicesCount = 10
         val dispatcher = Executors.newFixedThreadPool(12) {
             Thread(it, "discovery-pool")
         }.asCoroutineDispatcher()
@@ -86,8 +86,8 @@ internal open class ServiceInstanceIdRegistryTest : AbstractServiceInstanceIdReg
     }
 
     @Test
-    fun `parallel registration of 30 services should be performed without instance id collisions`() = runBlocking {
-        val servicesCount = 30
+    fun `parallel registration of 10 services should be performed without instance id collisions`() = runBlocking {
+        val servicesCount = 10
         val dispatcher = Executors.newFixedThreadPool(12) {
             Thread(it, "discovery-pool")
         }.asCoroutineDispatcher()

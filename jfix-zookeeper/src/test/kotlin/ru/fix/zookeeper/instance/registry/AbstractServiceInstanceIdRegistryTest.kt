@@ -66,8 +66,8 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
             client: CuratorFramework = testingServer.createClient(),
             maxInstancesCount: Int = Int.MAX_VALUE,
             lockAcquirePeriod: Duration = Duration.ofSeconds(3),
-            expirationPeriod: Duration =  Duration.ofSeconds(1),
-            lockCheckAndProlongInterval: Duration = Duration.ofMillis(500)
+            expirationPeriod: Duration =  Duration.ofSeconds(2),
+            lockCheckAndProlongInterval: Duration = Duration.ofMillis(1000)
     ) = ServiceInstanceIdRegistry(
             curatorFramework = client,
             instanceIdGenerator = MinFreeInstanceIdGenerator(maxInstancesCount),

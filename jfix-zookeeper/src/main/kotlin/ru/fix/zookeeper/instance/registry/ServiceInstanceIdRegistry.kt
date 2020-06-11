@@ -1,19 +1,18 @@
 package ru.fix.zookeeper.instance.registry
 
 import org.apache.curator.framework.CuratorFramework
-import org.apache.curator.framework.state.ConnectionState
-import org.apache.curator.framework.state.ConnectionStateListener
 import org.apache.curator.utils.ZKPaths
 import org.apache.zookeeper.KeeperException
 import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.Profiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.zookeeper.lock.LockIdentity
+import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock
 import ru.fix.zookeeper.lock.PersistentExpiringLockManager
 import ru.fix.zookeeper.utils.Marshaller
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.time.Instant
-import java.util.concurrent.ConcurrentSkipListSet
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * This class provides functionality of instance id registration.
@@ -34,7 +33,7 @@ class ServiceInstanceIdRegistry(
         private val logger = LoggerFactory.getLogger(ServiceInstanceIdRegistry::class.java)
     }
 
-    private val registeredInstanceIdLocks: MutableSet<LockIdentity> = ConcurrentSkipListSet()
+    private val registeredInstanceIdLocks: MutableSet<LockIdentity> = ConcurrentHashMap.newKeySet()
 
     private val lockManager: PersistentExpiringLockManager = PersistentExpiringLockManager(
             curatorFramework,
@@ -43,15 +42,6 @@ class ServiceInstanceIdRegistry(
     )
 
     init {
-        curatorFramework
-                .connectionStateListenable
-                .addListener(
-                        ConnectionStateListener { _, newState ->
-                            when (newState) {
-                                ConnectionState.RECONNECTED -> reconnect()
-                                else -> Unit
-                            }
-                        })
         initServiceRegistrationPath()
     }
 
@@ -62,28 +52,20 @@ class ServiceInstanceIdRegistry(
     fun register(serviceName: String): String {
         val registrationAttempts = config.get().countRegistrationAttempts
         for (i in 1..registrationAttempts) {
-            val alreadyRegisteredInstanceIds = lockManager.getNonExpiredLockNodesByPath(serviceRegistrationPath)
+            val alreadyRegisteredInstanceIds = getNonExpiredLockNodesInPath()
             val preparedInstanceId = instanceIdGenerator.nextId(alreadyRegisteredInstanceIds)
 
             val instanceIdPath = ZKPaths.makePath(serviceRegistrationPath, preparedInstanceId)
             val instanceIdData = InstanceIdData(serviceName, Instant.now())
             val lockIdentity = LockIdentity(instanceIdPath, Marshaller.marshall(instanceIdData))
 
-            val result = lockManager.tryAcquire(lockIdentity) { lock ->
-                logger.error("Failed to prolong lock=$lock for service=$serviceName. " +
-                        "Current registration node state: " +
-                        ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true))
-            }
+            val result = lockManager.tryAcquire(lockIdentity) { prolongationFallback(it, serviceName) }
             when {
                 result -> {
                     registeredInstanceIdLocks.add(lockIdentity)
                     logger.info("Instance of service=$serviceName started with id=$preparedInstanceId")
                     return preparedInstanceId
                 }
-                i == 1 ->
-                    logger.debug("Failed to register service=$serviceName during first attempt. Retry...")
-                i in 2 until registrationAttempts ->
-                    logger.warn("Failed to register service=$serviceName at attempt=$i. Retry...")
                 i == registrationAttempts -> {
                     logger.error("Failed to register service=$serviceName. " +
                             "Limit=${registrationAttempts} of instance id registration reached. " +
@@ -92,9 +74,34 @@ class ServiceInstanceIdRegistry(
                             ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
                     )
                 }
+                i == 1 ->
+                    logger.debug("Failed to register service=$serviceName during first attempt. Retry...")
+                i in 2 until registrationAttempts ->
+                    logger.warn("Failed to register service=$serviceName at attempt=$i. Retry...")
             }
         }
-        throw Exception("Failed to register service=$serviceName.")
+        throw Exception("Failed to register service=$serviceName. " +
+                "Limit=${registrationAttempts} of instance id registration reached. ")
+    }
+
+    /**
+     * Try to acquire instanceId's lock that failed prolongation.  If acquiring failed, then log error.
+     */
+    private fun prolongationFallback(lockIdentity: LockIdentity, serviceName: String) {
+        val instanceId = ZKPaths.getNodeFromPath(lockIdentity.nodePath)
+        val acquired = lockManager.tryAcquire(lockIdentity) {
+            logger.error("Failed to prolong lock=$it after for service=$serviceName. " +
+                    "Current registration node state: " +
+                    ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true))
+        }
+
+        if (!acquired) {
+            logger.error("Can't get previous instance id=$instanceId after reconnection. " +
+                    "Probably lock of this instance was expired and new service was registered with this instance id. " +
+                    "Lock id: $lockIdentity. Current registration node state: " +
+                    ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
+            )
+        }
     }
 
     private fun initServiceRegistrationPath() {
@@ -110,26 +117,18 @@ class ServiceInstanceIdRegistry(
         }
     }
 
-    private fun reconnect() {
-        registeredInstanceIdLocks.forEach { lockIdentity ->
-            val instanceId = ZKPaths.getNodeFromPath(lockIdentity.nodePath)
-            if (lockManager.tryAcquire(lockIdentity) {
-                        logger.error("Failed to prolong lock=$it after reconnect. " +
-                                "Current registration node state: " +
-                                ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true))
-                    }
-            ) {
-                logger.info("ServiceInstanceIdRegistry client reconnected after connection issues " +
-                        "and got its previous instance id=$instanceId that have before reconnection")
-            } else {
-                logger.error("Can't get previous instance id=$instanceId after reconnection. " +
-                        "Probably lock of this instance was expired and new service was registered with this instance id. " +
-                        "Lock id: $lockIdentity. Current registration node state: " +
-                        ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
-                )
-            }
-
-        }
+    private fun getNonExpiredLockNodesInPath(): List<String> {
+        return curatorFramework.children
+                .forPath(serviceRegistrationPath)
+                .asSequence()
+                .map {
+                    it to PersistentExpiringDistributedLock.readLockNodeState(
+                            curatorFramework, ZKPaths.makePath(serviceRegistrationPath, it)
+                    )
+                }
+                .filter { it.second == PersistentExpiringDistributedLock.LockNodeState.NOT_EXPIRED_LOCK }
+                .map { it.first }
+                .toList()
     }
 
     override fun close() {
@@ -141,7 +140,7 @@ class ServiceInstanceIdRegistry(
             lockManager.close()
             logger.info("Instance id registry with closed successfully.")
         } catch (e: Exception) {
-            logger.error("Error during instance id registry close.")
+            logger.error("Error during instance id registry close.", e)
         }
     }
 }

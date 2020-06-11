@@ -12,6 +12,7 @@ import ru.fix.zookeeper.transactional.ZkTransaction;
 import ru.fix.zookeeper.utils.Marshaller;
 
 import javax.annotation.concurrent.NotThreadSafe;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -325,6 +326,31 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         } catch (KeeperException.NoNodeException noNodeException) {
             logger.debug("Node already removed while checkAndProlong.", noNodeException);
             return false;
+        }
+    }
+
+    public enum LockNodeState {
+        EXPIRED_LOCK,
+        NOT_EXPIRED_LOCK,
+        NODE_ABSENT,
+        NOT_A_LOCK
+    }
+
+    public static LockNodeState readLockNodeState(CuratorFramework curator, String path) {
+        try {
+            byte[] rawData = curator.getData().forPath(path);
+            LockData lockData = Marshaller.unmarshall(new String(rawData, StandardCharsets.UTF_8), LockData.class);
+            return lockData.isExpired() ? LockNodeState.EXPIRED_LOCK: LockNodeState.NOT_EXPIRED_LOCK;
+        } catch (KeeperException.NoNodeException noNodeException) {
+            logger.debug("No lock by path={}", path, noNodeException);
+            return LockNodeState.NODE_ABSENT;
+        } catch (IOException e) {
+            logger.warn("Found inconsistent data inside lock by path={}", path);
+            return LockNodeState.NOT_A_LOCK;
+        } catch (Exception exception) {
+            String message = "Failed to read data of lock by path=" + path;
+            logger.warn(message, exception);
+            throw new IllegalStateException(message, exception);
         }
     }
 

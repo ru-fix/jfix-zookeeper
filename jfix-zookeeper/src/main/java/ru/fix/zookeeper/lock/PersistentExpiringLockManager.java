@@ -1,7 +1,6 @@
 package ru.fix.zookeeper.lock;
 
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.utils.ZKPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.fix.aggregating.profiler.Profiler;
@@ -9,15 +8,10 @@ import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.stdlib.concurrency.threads.NamedExecutors;
 import ru.fix.stdlib.concurrency.threads.ReschedulableScheduler;
 import ru.fix.stdlib.concurrency.threads.Schedule;
-import ru.fix.zookeeper.utils.Marshaller;
 
 import java.time.Duration;
-import java.util.AbstractMap;
-import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * Acquires {@code PersistentExpiringDistributedLock} locks and automatically prolongs them.
@@ -135,42 +129,13 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         return Optional.of(container.lock.getState());
     }
 
-    /**
-     * @param path zk path, contained locks
-     * @return list of nodes of active locks, managed not only this manager
-     */
-    public List<String> getNonExpiredLockNodesByPath(String path) throws Exception {
-        return curatorFramework.getChildren()
-                .forPath(path)
-                .stream()
-                .map(node -> {
-                    String nodePath = ZKPaths.makePath(path, node);
-                    try {
-                        return new AbstractMap.SimpleEntry<>(
-                                node,
-                                Marshaller.unmarshall(
-                                        new String(curatorFramework.getData().forPath(nodePath)),
-                                        LockData.class
-                                )
-                        );
-                    } catch (Exception exception) {
-                        logger.warn("Error during getting data by zk path={}", nodePath, exception);
-                        return null;
-                    }
-                })
-                .filter(Objects::nonNull)
-                .filter(lockData -> !lockData.getValue().isExpired())
-                .map(AbstractMap.SimpleEntry::getKey)
-                .collect(Collectors.toList());
-    }
-
     public void release(LockIdentity lockId) {
         LockContainer container = locks.remove(lockId);
-        if (container == null) {
-            logger.error("Illegal state. Persistent lock for lockId={} doesn't exist.", lockId);
-            return;
-        }
-        try {
+        try (container) {
+            if (container == null) {
+                logger.error("Illegal state. Persistent lock for lockId={} doesn't exist.", lockId);
+                return;
+            }
             if (!container.release()) {
                 logger.warn("Failed to release lock {}", lockId);
             }
@@ -178,7 +143,6 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             logger.error("Failed to release lock: " + lockId, exception);
         } finally {
             locks.remove(lockId);
-            container.close();
         }
     }
 

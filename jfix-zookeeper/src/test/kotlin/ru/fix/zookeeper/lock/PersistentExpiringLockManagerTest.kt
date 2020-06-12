@@ -268,7 +268,7 @@ internal class PersistentExpiringLockManagerTest {
     }
 
     @Test
-    fun `connection lost, manager failed to prolong and notify client`() {
+    fun `connection lost, manager failed to prolong, detaches lock and notifies client`() {
         val proxyTcpCrusher = zkServer.openProxyTcpCrusher()
         val zkProxyClient = zkServer.createZkProxyClient(proxyTcpCrusher)
 
@@ -293,7 +293,7 @@ internal class PersistentExpiringLockManagerTest {
 
         await().atMost(1, MINUTES).until { prolongationFailedEventSlot.get() }
 
-        Thread.sleep(10000)
+        proxiedManager.isLockManaged(lock).shouldBeFalse()
     }
 
     private fun createLockIdentity(id: Int = nextId()) =

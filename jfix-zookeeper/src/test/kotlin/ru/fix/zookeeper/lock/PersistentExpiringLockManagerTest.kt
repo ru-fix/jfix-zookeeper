@@ -108,6 +108,30 @@ internal class PersistentExpiringLockManagerTest {
     }
 
     @Test
+    fun `acquire already acquired but expired lock succeed but with error message in logs`() {
+        val lockId = createLockIdentity()
+        val callbackFailed = AtomicBoolean()
+
+        val wronglyConfiguredManager = createLockManager(
+                PersistentExpiringLockManagerConfig(
+                        lockAcquirePeriod = Duration.ofSeconds(1),
+                        expirationPeriod = Duration.ofSeconds(1),
+                        lockCheckAndProlongInterval = Duration.ofSeconds(60)
+                )
+        )
+
+        wronglyConfiguredManager.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
+
+        await().atMost(1, MINUTES).until {
+            wronglyConfiguredManager.getLockState(lockId).map { it.isExpired }.orElse(false)
+        }
+
+        wronglyConfiguredManager.tryAcquire(lockId) { callbackFailed.set(true) }.shouldBeTrue()
+
+        callbackFailed.get().shouldBeFalse()
+    }
+
+    @Test
     fun `first manager acquires lock, second manager fails to acquire same lock`() {
         val lockId = createLockIdentity()
         val callbackFailed = AtomicBoolean()
@@ -208,6 +232,7 @@ internal class PersistentExpiringLockManagerTest {
         val locksPath = "/locks" + nextId()
         fun createLockIdentityForIndex(index: Int) =
                 LockIdentity(ZKPaths.makePath(locksPath, "lock-$index"), "meta: $index")
+
         val callbackFailed = AtomicBoolean()
 
         val locksCount = 30
@@ -243,7 +268,7 @@ internal class PersistentExpiringLockManagerTest {
     }
 
     @Test
-    fun `connection lost, manager failed to prolong and notify client`() {
+    fun `connection lost, manager failed to prolong, detaches lock and notifies client`() {
         val proxyTcpCrusher = zkServer.openProxyTcpCrusher()
         val zkProxyClient = zkServer.createZkProxyClient(proxyTcpCrusher)
 
@@ -268,7 +293,7 @@ internal class PersistentExpiringLockManagerTest {
 
         await().atMost(1, MINUTES).until { prolongationFailedEventSlot.get() }
 
-        Thread.sleep(10000)
+        proxiedManager.isLockManaged(lock).shouldBeFalse()
     }
 
     private fun createLockIdentity(id: Int = nextId()) =

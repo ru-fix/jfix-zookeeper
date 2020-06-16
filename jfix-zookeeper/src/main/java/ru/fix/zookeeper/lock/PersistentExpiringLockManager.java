@@ -62,10 +62,11 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 Schedule.withDelay(config.map(prop -> prop.getLockCheckAndProlongInterval().toMillis())),
                 0,
                 () -> locks.forEach((lockId, lockContainer) -> {
-                    if (!checkAndProlongIfAvailable(lockId, lockContainer.lock)) {
-                        logger.warn("Failed lock prolongation for lock={}", lockId);
+                    if (!checkAndProlongLockIfRequired(lockId, lockContainer.lock)) {
+                        locks.remove(lockId);
+                        logger.error("Failed lock prolongation for lock={}. Lock is removed from manager", lockId);
                         try {
-                            lockContainer.prolongationFailedListener.onLockProlongationFailed(lockId);
+                            lockContainer.prolongationFailedListener.onLockProlongationFailedAndRemoved(lockId);
                         } catch (Exception exc) {
                             logger.error("Failed to invoke ProlongationFailedListener on lock {}", lockId, exc);
                         }
@@ -146,9 +147,12 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         }
     }
 
-    private boolean checkAndProlongIfAvailable(
-            LockIdentity lockId,
-            PersistentExpiringDistributedLock lock) {
+    /**
+     * @param lockId
+     * @param lock
+     * @return false in case of Exception of lock expiration or losing lock ownership
+     */
+    private boolean checkAndProlongLockIfRequired(LockIdentity lockId, PersistentExpiringDistributedLock lock) {
         try {
             logger.debug("Check and prolong lockId={}", lockId);
             return lock.checkAndProlongIfExpiresIn(

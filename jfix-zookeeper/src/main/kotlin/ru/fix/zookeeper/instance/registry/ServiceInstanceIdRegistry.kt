@@ -50,14 +50,12 @@ class ServiceInstanceIdRegistry(
      * @return generated instance id for registered service
      */
     fun register(serviceName: String): String {
+        initServicePath(serviceName)
         val registrationAttempts = config.get().countRegistrationAttempts
         for (i in 1..registrationAttempts) {
-            val alreadyRegisteredInstanceIds = getNonExpiredLockNodesInPath()
+            val alreadyRegisteredInstanceIds = getNonExpiredLockNodesInPathForService(serviceName)
             val preparedInstanceId = instanceIdGenerator.nextId(alreadyRegisteredInstanceIds)
-
-            val instanceIdPath = ZKPaths.makePath(serviceRegistrationPath, preparedInstanceId)
-            val instanceIdData = InstanceIdData(serviceName, Instant.now())
-            val lockIdentity = LockIdentity(instanceIdPath, Marshaller.marshall(instanceIdData))
+            val lockIdentity = makeLockIdentity(serviceName, preparedInstanceId)
 
             val result = lockManager.tryAcquire(lockIdentity) { prolongationFallback(it, serviceName) }
             when {
@@ -81,7 +79,20 @@ class ServiceInstanceIdRegistry(
             }
         }
         throw Exception("Failed to register service=$serviceName. " +
-                "Limit=${registrationAttempts} of instance id registration reached. ")
+                "Limit=${registrationAttempts} of instance id registration reached. " +
+                "Current registration node state: " +
+                ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true))
+    }
+
+    fun unregister(serviceName: String, instanceId: String) {
+        try {
+            val lockIdentity = makeLockIdentity(serviceName, instanceId)
+            lockManager.release(lockIdentity)
+            registeredInstanceIdLocks.remove(lockIdentity)
+        } catch (e: Exception) {
+            logger.error("Failed to unregister service=$serviceName with instanceId=$instanceId", e)
+            throw  e
+        }
     }
 
     /**
@@ -104,26 +115,37 @@ class ServiceInstanceIdRegistry(
         }
     }
 
+    private fun makeLockIdentity(serviceName: String, instanceId: String) : LockIdentity {
+        val instanceIdPath = ZKPaths.makePath(serviceRegistrationPath, serviceName, instanceId)
+        val instanceIdData = InstanceIdData(Instant.now())
+        return LockIdentity(instanceIdPath, Marshaller.marshall(instanceIdData))
+    }
+
     private fun initServiceRegistrationPath() {
+        initServicePath("")
+    }
+
+    private fun initServicePath(serviceName: String) {
+        val path = ZKPaths.makePath(serviceRegistrationPath, serviceName)
         try {
             curatorFramework.create()
                     .creatingParentsIfNeeded()
-                    .forPath(serviceRegistrationPath, byteArrayOf())
+                    .forPath(path, byteArrayOf())
         } catch (e: KeeperException.NodeExistsException) {
-            logger.debug("Node with path=$serviceRegistrationPath is already initialized", e)
+            logger.debug("Node with path=$path is already initialized", e)
         } catch (e: Exception) {
-            logger.error("Illegal state when create path: $serviceRegistrationPath", e)
+            logger.error("Illegal state when create path: $path", e)
             throw e
         }
     }
 
-    private fun getNonExpiredLockNodesInPath(): List<String> {
+    private fun getNonExpiredLockNodesInPathForService(serviceName: String): List<String> {
         return curatorFramework.children
-                .forPath(serviceRegistrationPath)
+                .forPath(ZKPaths.makePath(serviceRegistrationPath, serviceName))
                 .asSequence()
                 .map {
                     it to PersistentExpiringDistributedLock.readLockNodeState(
-                            curatorFramework, ZKPaths.makePath(serviceRegistrationPath, it)
+                            curatorFramework, ZKPaths.makePath(serviceRegistrationPath, serviceName, it)
                     )
                 }
                 .filter { it.second == PersistentExpiringDistributedLock.LockNodeState.NOT_EXPIRED_LOCK }

@@ -1,77 +1,59 @@
 package ru.fix.zookeeper.instance.registry
 
 import org.apache.curator.framework.CuratorFramework
+import org.apache.curator.framework.state.ConnectionState
 import org.apache.curator.utils.ZKPaths
-import org.junit.jupiter.api.Assertions
+import org.awaitility.Awaitility
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.zookeeper.AbstractZookeeperTest
-import ru.fix.zookeeper.lock.LockData
+import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock
 import ru.fix.zookeeper.lock.PersistentExpiringLockManagerConfig
-import ru.fix.zookeeper.utils.Marshaller
 import java.time.Duration
-import java.time.Instant
+import java.util.concurrent.atomic.AtomicReference
 
 abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
 
-    protected fun assertInstances(services: Map<String, Set<String>>) {
-        val expected = services.flatMap { service ->
-            service.value.map { service.key to it }
-        }
-        val actual = testingServer.client.children
-                .forPath(ZKPaths.makePath(rootPath, "services"))
-                .asSequence()
-                .map {
-                    val instancePath = ZKPaths.makePath(rootPath, "services", it)
-                    val nodeData = Marshaller.unmarshall(
-                            testingServer.client.data.forPath(instancePath).toString(Charsets.UTF_8),
-                            LockData::class.java
-                    )
-                    val instanceIdData = Marshaller.unmarshall(nodeData.metadata, InstanceIdData::class.java)
-                    instanceIdData to it
-                }
-                .map { it.first.serviceName to it.second }
-                .toList()
-
-        Assertions.assertEquals(expected, actual)
+    protected companion object {
+        val serviceRegistrationPath: String = ZKPaths.makePath(rootPath, "services")
     }
 
-    protected fun isInstanceIdLockExpired(instanceId: String, disconnectTimeout: Duration): Boolean {
-        val instancePath = ZKPaths.makePath(rootPath, "services", instanceId)
-        val nodeData = Marshaller.unmarshall(
-                testingServer.createClient().data.forPath(instancePath).toString(Charsets.UTF_8),
-                LockData::class.java
-        )
-        val now = Instant.now()
-        return nodeData.expirationTimestamp + disconnectTimeout < now
+    protected fun isInstanceIdLockExpired(
+            serviceName: String,
+            instanceId: String,
+            curator: CuratorFramework = testingServer.client
+    ): Boolean {
+        val instancePath = ZKPaths.makePath(serviceRegistrationPath, serviceName, instanceId)
+        return PersistentExpiringDistributedLock.readLockNodeState(curator, instancePath) ==
+                PersistentExpiringDistributedLock.LockNodeState.EXPIRED_LOCK
     }
 
-    protected fun assertInstanceIdMapping(instances: Set<Pair<String, String>>) {
-        instances.forEach {
-            Assertions.assertEquals(it.second, it.first)
-        }
-    }
-
-    protected fun assertInstanceIdLocksExpiration(
-            instances: Set<Pair<String, Boolean>>,
-            disconnectTimeout: Duration
+    protected fun waitLockNodeState(
+            expected: PersistentExpiringDistributedLock.LockNodeState,
+            path: String,
+            curator: CuratorFramework = testingServer.client,
+            timeout: Duration = Duration.ofSeconds(10)
     ) {
-        instances.forEach {
-            Assertions.assertEquals(it.second, !isInstanceIdLockExpired(it.first, disconnectTimeout))
-        }
+        Awaitility.await()
+                .timeout(timeout)
+                .pollInterval(Duration.ofMillis(500))
+                .until { expected == PersistentExpiringDistributedLock.readLockNodeState(curator, path) }
     }
+
+    protected fun lockPath(serviceName: String, id: String): String =
+            ZKPaths.makePath(serviceRegistrationPath, serviceName, id)
 
     protected fun createInstanceIdRegistry(
             registrationRetryCount: Int = 5,
             client: CuratorFramework = testingServer.createClient(),
             maxInstancesCount: Int = Int.MAX_VALUE,
             lockAcquirePeriod: Duration = Duration.ofSeconds(3),
-            expirationPeriod: Duration =  Duration.ofSeconds(2),
+            expirationPeriod: Duration = Duration.ofSeconds(2),
             lockCheckAndProlongInterval: Duration = Duration.ofMillis(1000)
     ) = ServiceInstanceIdRegistry(
             curatorFramework = client,
             instanceIdGenerator = MinFreeInstanceIdGenerator(maxInstancesCount),
-            serviceRegistrationPath = ZKPaths.makePath(rootPath, "services"),
+            serviceRegistrationPath = serviceRegistrationPath,
             config = DynamicProperty.of(
                     ServiceInstanceIdRegistryConfig(
                             countRegistrationAttempts = registrationRetryCount,
@@ -84,4 +66,16 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
                     )),
             profiler = NoopProfiler()
     )
+
+    protected fun waitDisconnectState(zkState: AtomicReference<ConnectionState>) {
+        Awaitility.await()
+                .timeout(Duration.ofSeconds(2))
+                .until { zkState.get() == ConnectionState.SUSPENDED || zkState.get() == ConnectionState.LOST }
+    }
+
+    protected fun waitReconnectState(zkState: AtomicReference<ConnectionState>) {
+        Awaitility.await()
+                .timeout(Duration.ofSeconds(2))
+                .until { zkState.get() == ConnectionState.RECONNECTED }
+    }
 }

@@ -7,10 +7,12 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.framework.state.ConnectionState
+import org.apache.curator.utils.ZKPaths
 import org.apache.logging.log4j.kotlin.logger
 import org.apache.zookeeper.KeeperException
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.*
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.parallel.Execution
 import org.junit.jupiter.api.parallel.ExecutionMode
 import org.netcrusher.tcp.TcpCrusher
@@ -51,7 +53,7 @@ internal class PersistentExpiringDistributedLockTest {
                 LockIdentity(path, data))
     }
 
-    private fun lockPath(id: String) = "$LOCKS_PATH/$id"
+    private fun lockPath(id: String = idSequence.get()) = ZKPaths.makePath(LOCKS_PATH, id)
 
     @BeforeAll
     fun startZkTestingServer() {
@@ -520,5 +522,44 @@ internal class PersistentExpiringDistributedLockTest {
         assertThrows<Exception> {
             PersistentExpiringDistributedLock(zkServer.client, LockIdentity("path/here"))
         }
+    }
+
+    @Test
+    fun `read lock node state is lock not expired`() {
+        val lockPath = lockPath()
+        val lock = createLock(path = lockPath)
+        lock.expirableAcquire(Duration.ofSeconds(10), Duration.ofSeconds(10)).shouldBeTrue()
+
+        val nodeState = PersistentExpiringDistributedLock.readLockNodeState(zkServer.client, lockPath)
+        assertEquals(PersistentExpiringDistributedLock.LockNodeState.NOT_EXPIRED_LOCK, nodeState)
+    }
+
+    @Test
+    fun `read lock node state is lock expired`() {
+        val lockPath = lockPath()
+        val lock = createLock(path = lockPath)
+        lock.expirableAcquire(Duration.ofMillis(1), Duration.ofMillis(1)).shouldBeTrue()
+
+        val nodeState = PersistentExpiringDistributedLock.readLockNodeState(zkServer.client, lockPath)
+        assertEquals(PersistentExpiringDistributedLock.LockNodeState.EXPIRED_LOCK, nodeState)
+    }
+
+    @Test
+    fun `read lock node state is lock absent`() {
+        val lockPath = lockPath()
+
+        val nodeState = PersistentExpiringDistributedLock.readLockNodeState(zkServer.client, lockPath)
+        assertEquals(PersistentExpiringDistributedLock.LockNodeState.NODE_ABSENT, nodeState)
+    }
+
+    @Test
+    fun `read lock node state is not a lock`() {
+        val lockPath = lockPath()
+        val lock = createLock(path = lockPath)
+        lock.expirableAcquire(Duration.ofMillis(10), Duration.ofMillis(10)).shouldBeTrue()
+
+        zkServer.client.setData().forPath(lockPath, "qwert".toByteArray())
+        val nodeState = PersistentExpiringDistributedLock.readLockNodeState(zkServer.client, lockPath)
+        assertEquals(PersistentExpiringDistributedLock.LockNodeState.NOT_A_LOCK, nodeState)
     }
 }

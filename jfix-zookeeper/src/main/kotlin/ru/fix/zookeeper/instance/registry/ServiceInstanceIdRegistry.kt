@@ -122,6 +122,7 @@ class ServiceInstanceIdRegistry(
             val lockIdentity = makeLockIdentity(serviceName, instanceId)
             lockManager.release(lockIdentity)
             registeredInstanceIdLocks.remove(lockIdentity)
+            prolongFailedInstanceIdLocks.remove(serviceName to lockIdentity)
         } catch (e: Exception) {
             logger.error("Failed to unregister service=$serviceName with instanceId=$instanceId", e)
             throw  e

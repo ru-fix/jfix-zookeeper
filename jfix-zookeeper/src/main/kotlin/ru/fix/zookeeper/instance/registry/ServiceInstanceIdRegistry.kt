@@ -83,6 +83,8 @@ class ServiceInstanceIdRegistry(
 
             val result = lockManager.tryAcquire(lockIdentity) {
                 logger.error("Failed to prolong lock=$it after for service=$serviceName. " +
+                        "This lock will periodically retry with interval=${config.get().retryRestoreInstanceIdInterval} " +
+                        "to reacquire lock until it will be successfully acquired. " +
                         "Current registration node state: " +
                         ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true))
                 prolongFailedInstanceIdLocks.add(serviceName to it)

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore
 import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.net.UnknownHostException
+import java.time.Duration
 import java.time.Instant
 
 data class LockData(

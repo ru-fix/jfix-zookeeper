@@ -12,7 +12,7 @@ object Vers {
     const val kotlin_gradle = "1.3.71"
     const val kotlin_coroutines = "1.3.5"
     const val jackson = "2.10.3"
-    const val apache_curator = "4.3.0"
+    const val apache_curator = "5.0.0"
     const val junit_jupiter = "5.6.2"
     const val slf4j = "1.7.30"
     const val log4j = "2.13.2"

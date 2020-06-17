@@ -132,19 +132,19 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     public void release(LockIdentity lockId) {
         LockContainer container = locks.remove(lockId);
-        if (container == null) {
-            logger.error("Illegal state. Persistent lock for lockId={} doesn't exist.", lockId);
-            return;
-        }
-        try {
+        try (container) {
+            if (container == null) {
+                logger.error("Illegal state. Persistent lock for lockId={} doesn't exist.", lockId);
+                throw new IllegalStateException("Illegal state. Persistent lock for lockId=" + lockId + " doesn't exist." +
+                        "Probably this lock was released when another manager acquired lock by same path.");
+            }
             if (!container.release()) {
                 logger.warn("Failed to release lock {}", lockId);
             }
+        } catch (IllegalStateException exception) {
+            throw exception;
         } catch (Exception exception) {
             logger.error("Failed to release lock: " + lockId, exception);
-        } finally {
-            locks.remove(lockId);
-            container.close();
         }
     }
 

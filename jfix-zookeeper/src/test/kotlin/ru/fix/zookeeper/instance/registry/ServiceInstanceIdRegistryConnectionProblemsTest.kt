@@ -1,192 +1,214 @@
 package ru.fix.zookeeper.instance.registry
 
+import io.kotest.matchers.shouldBe
+import org.apache.curator.utils.ZKPaths
 import org.apache.logging.log4j.kotlin.logger
-import org.awaitility.Awaitility.await
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.netcrusher.core.reactor.NioReactor
-import org.netcrusher.tcp.TcpCrusher
-import org.netcrusher.tcp.TcpCrusherBuilder
-import ru.fix.stdlib.socket.SocketChecker
+import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock.LockNodeState.EXPIRED_LOCK
+import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock.LockNodeState.LIVE_LOCK
 import java.time.Duration
 
 internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractServiceInstanceIdRegistryTest() {
     private val logger = logger()
-    private val reactor: NioReactor = NioReactor()
 
     @Test
-    fun `client lost connection and reconnect with same instance id when disconnect timeout didn't reached`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
-        val proxyPort = SocketChecker.getAvailableRandomPort()
-        val crusher = tcpCrusher(proxyPort)
+    fun `client lost connection and reconnect with same instance id when lock of this instance id not expired`() {
+        val lockAcquirePeriod = Duration.ofSeconds(4)
+        val crusher = testingServer.openProxyTcpCrusher()
+        val proxyClient = testingServer.createZkProxyClient(crusher)
+        val zkProxyState = testingServer.startWatchClientState(proxyClient)
 
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
-
-        val instanceIds = listOf(
-                createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout).register("abs-rate"),
-                createInstanceIdRegistry().register("abs-rate"),
-                createInstanceIdRegistry().register("drugkeeper")
-        )
+        val registry = createInstanceIdRegistry(client = proxyClient, lockAcquirePeriod = lockAcquirePeriod)
+        registry.register("a") shouldBe "1"
         logger.info(zkTree())
-        assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
-        assertInstanceIdMapping(setOf(instanceIds[0] to "1", instanceIds[1] to "2", instanceIds[2] to "3"))
-
-        crusher.freeze()
-        await()
-                .timeout(Duration.ofSeconds(2))
-                .until { !proxyClient.zookeeperClient.isConnected }
-        logger.info(zkTree())
-
-        Thread.sleep(disconnectTimeout.toMillis() / 2)
-        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), disconnectTimeout)
-
-        crusher.unfreeze()
-        Thread.sleep(3000)
-        await()
-                .timeout(Duration.ofSeconds(2))
-                .until { proxyClient.zookeeperClient.isConnected }
-
-        logger.info(zkTree())
-        assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
-    }
-
-    @Test
-    fun `client disconnected, disconnect timeout not reached, register new service with new instance id`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
-        val proxyPort = SocketChecker.getAvailableRandomPort()
-        val crusher = tcpCrusher(proxyPort)
-
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
-
-        val instances = mutableListOf(
-                createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout).register("abs-rate"),
-                createInstanceIdRegistry().register("abs-rate"),
-                createInstanceIdRegistry().register("drugkeeper")
-        )
-        logger.info(zkTree())
-        assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
-        assertInstanceIdMapping(setOf(instances[0] to "1", instances[1] to "2", instances[2] to "3"))
-
-        crusher.freeze()
-        await()
-                .timeout(Duration.ofSeconds(2))
-                .until { !proxyClient.zookeeperClient.isConnected }
-
-        logger.info(zkTree())
-        Thread.sleep(disconnectTimeout.toMillis() / 2)
-        logger.info(zkTree())
-        assertFalse(isInstanceIdLockExpired("1", disconnectTimeout))
-
-        val registry = createInstanceIdRegistry()
-        registry.register("extra-service")
-        logger.info(zkTree())
-
-        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true, "4" to true), disconnectTimeout)
-
-        crusher.unfreeze()
-        Thread.sleep(disconnectTimeout.toMillis() / 2)
-        logger.info(zkTree())
-
-        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true, "4" to true), disconnectTimeout)
-    }
-
-    @Test
-    fun `client disconnected, disconnect timeout reached, register new another service with free instance id`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
-        val proxyPort = SocketChecker.getAvailableRandomPort()
-        val crusher = tcpCrusher(proxyPort)
-
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
-        val instances = mutableListOf(
-                createInstanceIdRegistry(
-                        client = proxyClient,
-                        disconnectTimeout = disconnectTimeout
-                ).register("abs-rate"),
-                createInstanceIdRegistry().register("abs-rate"),
-                createInstanceIdRegistry().register("drugkeeper")
-        )
-        logger.info(zkTree())
-        assertInstances(mapOf("abs-rate" to setOf("1", "2"), "drugkeeper" to setOf("3")))
-        assertInstanceIdMapping(setOf(instances[0] to "1", instances[1] to "2", instances[2] to "3"))
-
-        crusher.freeze()
-        await()
-                .timeout(Duration.ofSeconds(1))
-                .until { !proxyClient.zookeeperClient.isConnected }
-
-        logger.info(zkTree())
-        Thread.sleep(disconnectTimeout.toMillis() * 2)
-
-        logger.info(zkTree())
-        assertTrue(isInstanceIdLockExpired("1", disconnectTimeout))
-
-        val client = testingServer.createClient()
-        createInstanceIdRegistry(client = client, disconnectTimeout = disconnectTimeout).register("wow-service")
-        await()
-                .timeout(Duration.ofSeconds(1))
-                .until { client.zookeeperClient.isConnected }
-        logger.info(zkTree())
-
-        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to true, "3" to true, "4" to true), disconnectTimeout)
 
         crusher.close()
+        waitDisconnectState(zkProxyState)
+
+        Thread.sleep(lockAcquirePeriod.toMillis() / 2)
+        logger.info(zkTree())
+        instanceIdState("a", "1") shouldBe LIVE_LOCK
+
+        crusher.open()
+        waitReconnectState(zkProxyState)
+
+        Thread.sleep(lockAcquirePeriod.toMillis())
+        logger.info(zkTree())
+        instanceIdState("a", "1") shouldBe LIVE_LOCK
     }
 
     @Test
-    fun `prolongation of instance id's lock works fine after reconnect`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
-        val proxyPort = SocketChecker.getAvailableRandomPort()
-        val crusher = tcpCrusher(proxyPort)
+    fun `client disconnected, lock of this instance id not expired, register new service with new instance id`() {
+        val lockAcquirePeriod = Duration.ofSeconds(4)
+        val crusher = testingServer.openProxyTcpCrusher()
+        val proxyClient = testingServer.createZkProxyClient(crusher)
+        val zkProxyState = testingServer.startWatchClientState(proxyClient)
 
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
+        createInstanceIdRegistry(client = proxyClient, lockAcquirePeriod = lockAcquirePeriod).register("abs-rate") shouldBe "1"
+        createInstanceIdRegistry().register("abs-rate") shouldBe "2"
+        logger.info(zkTree())
 
-        createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout).register("app")
+        crusher.close()
+        waitDisconnectState(zkProxyState)
+
+        instanceIdState("abs-rate", "1") shouldBe LIVE_LOCK
+
+        val registry = createInstanceIdRegistry()
+        registry.register("abs-rate") shouldBe "3"
+    }
+
+    @Test
+    fun `client disconnected, instance id's lock expired, register new another service with instance id of expired lock`() {
+        val lockAcquirePeriod = Duration.ofSeconds(3)
+        val crusher = testingServer.openProxyTcpCrusher()
+        val proxyClient = testingServer.createZkProxyClient(crusher)
+        val zkProxyState = testingServer.startWatchClientState(proxyClient)
+
+        createInstanceIdRegistry(client = proxyClient, lockAcquirePeriod = lockAcquirePeriod).register("abs-rate") shouldBe "1"
+        createInstanceIdRegistry().register("abs-rate") shouldBe "2"
+
+        crusher.close()
+        waitDisconnectState(zkProxyState)
+
+        waitLockNodeState(EXPIRED_LOCK, ZKPaths.makePath(serviceRegistrationPath, "abs-rate", "1"))
+        instanceIdState("abs-rate", "1") shouldBe EXPIRED_LOCK
+
+        val client = testingServer.createClient()
+        createInstanceIdRegistry(client = client, lockAcquirePeriod = lockAcquirePeriod).register("abs-rate") shouldBe "1"
+        client.blockUntilConnected()
+
+        instanceIdState("abs-rate", "1") shouldBe LIVE_LOCK
+    }
+
+    /**
+     * Here is close of the first registry to resolve problem of uniqueness of instance id of same service
+     */
+    @Test
+    fun `client disconnected, instance id's lock expired, register instance on expired instance id, client of expired lock reconnected with error logged`() {
+        val lockAcquirePeriod = Duration.ofSeconds(2)
+        val crusher = testingServer.openProxyTcpCrusher()
+        val proxyClient = testingServer.createZkProxyClient(crusher)
+        val zkProxyState = testingServer.startWatchClientState(proxyClient)
+
+        val registry = createInstanceIdRegistry(
+                client = proxyClient,
+                lockAcquirePeriod = lockAcquirePeriod
+        )
+        registry.register("my-service")
+        logger.info(zkTree())
+
+        crusher.close()
+        waitDisconnectState(zkProxyState)
 
         logger.info(zkTree())
-        assertInstances(mapOf("app" to setOf("1")))
+        waitLockNodeState(EXPIRED_LOCK, ZKPaths.makePath(serviceRegistrationPath, "my-service", "1"))
 
+        val client = testingServer.createClient()
+        createInstanceIdRegistry(client = client, lockAcquirePeriod = lockAcquirePeriod).register("my-service") shouldBe "1"
+        client.blockUntilConnected()
+
+        logger.info(zkTree())
+        instanceIdState("my-service", "1") shouldBe LIVE_LOCK
+
+        crusher.open()
+        /**
+         *  Here was errors, because 2 registry manages same instance.
+         */
+        Thread.sleep(5000)
+
+        registry.close()
+        /**
+         * No error logs, when reconnected registry closed
+         */
+        Thread.sleep(5000)
+        logger.info(zkTree())
+        instanceIdState("my-service", "1") shouldBe LIVE_LOCK
+    }
+
+    /**
+     * Here is close of second registry to resolve problem of uniqueness of instance id of same service
+     */
+    @Test
+    fun `1st registry have expired lock after connection loss, 2nd registry acquire this lock and close, 1st registry stop log errors`() {
+        val lockAcquirePeriod = Duration.ofSeconds(2)
+        val crusher1 = testingServer.openProxyTcpCrusher()
+        val proxyClient1 = testingServer.createZkProxyClient(crusher1)
+        val zkProxyState1 = testingServer.startWatchClientState(proxyClient1)
+
+        val registry1 = createInstanceIdRegistry(client = proxyClient1, lockAcquirePeriod = lockAcquirePeriod)
+        registry1.register("my-service") shouldBe "1"
+        logger.info(zkTree())
+
+        crusher1.close()
+        waitDisconnectState(zkProxyState1)
+
+        logger.info(zkTree())
+        waitLockNodeState(EXPIRED_LOCK, lockPath("my-service", "1"))
+
+        logger.info(zkTree())
+
+        val registry2 = createInstanceIdRegistry()
+        registry2.register("my-service") shouldBe "1"
+
+        crusher1.open()
+        Thread.sleep(5000)
+        /**
+         *  Here was errors logged, because 2 registry manages same instance.
+         */
+
+        registry2.close()
+        /**
+         * No error logs, when reconnected registry closed
+         */
+        Thread.sleep(5000)
+        instanceIdState("my-service", "1") shouldBe LIVE_LOCK
+    }
+
+    @Test
+    fun `instance id's lock didn't lost after reconnect`() {
+        val lockAcquirePeriod = Duration.ofSeconds(3)
+        val crusher = testingServer.openProxyTcpCrusher()
+        val proxyClient = testingServer.createZkProxyClient(crusher)
+        val zkProxyState = testingServer.startWatchClientState(proxyClient)
+
+        createInstanceIdRegistry(client = proxyClient, lockAcquirePeriod = lockAcquirePeriod).register("app") shouldBe "1"
         crusher.reopen()
-        logger.info(zkTree())
 
-        Thread.sleep(disconnectTimeout.toMillis())
-        logger.info(zkTree())
-        assertInstances(mapOf("app" to setOf("1")))
-        assertFalse(isInstanceIdLockExpired("1", disconnectTimeout))
+        waitDisconnectState(zkProxyState)
+        instanceIdState("app", "1") shouldBe LIVE_LOCK
     }
 
     @Test
-    fun `instances registered by same service have all expired locks after connection lost and timeout reached`() {
-        val disconnectTimeout = Duration.ofSeconds(4)
-        val proxyPort = SocketChecker.getAvailableRandomPort()
-        val crusher = tcpCrusher(proxyPort)
+    fun `registries registered by same service have all expired locks after connection lost and all prolonged after reconnect`() {
+        val lockAcquirePeriod = Duration.ofSeconds(3)
+        val crusher = testingServer.openProxyTcpCrusher()
+        val proxyClient = testingServer.createZkProxyClient(crusher)
+        val zkProxyState = testingServer.startWatchClientState(proxyClient)
 
-        val proxyClient = testingServer.createClient("localhost:${proxyPort}", 1000, 1000)
+        val registry = createInstanceIdRegistry(
+                client = proxyClient,
+                lockAcquirePeriod = lockAcquirePeriod,
+                expirationPeriod = Duration.ofMillis(500),
+                lockCheckAndProlongInterval = Duration.ofMillis(300)
+        )
+        registry.register("app") shouldBe "1"
+        registry.register("app") shouldBe "2"
+        registry.register("app") shouldBe "3"
 
-        val registry = createInstanceIdRegistry(client = proxyClient, disconnectTimeout = disconnectTimeout)
-        registry.register("app")
-        registry.register("app")
-        registry.register("app")
+        instanceIdState("app", "1") shouldBe LIVE_LOCK
 
-        logger.info(zkTree())
-        assertInstances(mapOf("app" to setOf("1", "2", "3")))
-        assertInstanceIdLocksExpiration(setOf("1" to true, "2" to true, "3" to true), disconnectTimeout)
+        crusher.close()
+        waitLockNodeState(EXPIRED_LOCK, ZKPaths.makePath(serviceRegistrationPath, "app", "3"))
+        instanceIdState("app", "1") shouldBe EXPIRED_LOCK
+        instanceIdState("app", "2") shouldBe EXPIRED_LOCK
 
-        crusher.freeze()
-        Thread.sleep(disconnectTimeout.toMillis() * 2 + 1000)
-        logger.info(zkTree())
-        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to false, "3" to false), disconnectTimeout)
+        crusher.open()
+        waitReconnectState(zkProxyState)
+        waitLockNodeState(LIVE_LOCK, ZKPaths.makePath(serviceRegistrationPath, "app", "3"))
 
-        crusher.unfreeze()
-        logger.info(zkTree())
-        assertInstanceIdLocksExpiration(setOf("1" to false, "2" to false, "3" to false), disconnectTimeout)
+        instanceIdState("app", "1") shouldBe LIVE_LOCK
+        instanceIdState("app", "2") shouldBe LIVE_LOCK
+        instanceIdState("app", "3") shouldBe LIVE_LOCK
     }
-
-    private fun tcpCrusher(proxyPort: Int): TcpCrusher =
-            TcpCrusherBuilder.builder()
-                    .withReactor(reactor)
-                    .withBindAddress("localhost", proxyPort)
-                    .withConnectAddress("localhost", testingServer.port)
-                    .buildAndOpen()
 
 }

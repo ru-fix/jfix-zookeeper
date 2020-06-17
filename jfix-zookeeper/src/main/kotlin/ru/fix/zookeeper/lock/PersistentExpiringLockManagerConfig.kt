@@ -4,7 +4,7 @@ import java.time.Duration
 
 data class PersistentExpiringLockManagerConfig(
         /**
-         *  For how log to acquire the lock.
+         *  For how long to acquire the lock.
          *  @see PersistentExpiringDistributedLock#expirableAcquire
          */
         val lockAcquirePeriod: Duration = Duration.ofSeconds(90),

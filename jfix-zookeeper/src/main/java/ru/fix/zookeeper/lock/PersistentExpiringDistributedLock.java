@@ -12,6 +12,7 @@ import ru.fix.zookeeper.transactional.ZkTransaction;
 import ru.fix.zookeeper.utils.Marshaller;
 
 import javax.annotation.concurrent.NotThreadSafe;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,22 +39,24 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @NotThreadSafe
 public class PersistentExpiringDistributedLock implements AutoCloseable {
-    final class State {
-        final boolean isOwn;
-        final boolean isExpired;
+
+    public final class State {
+        private final boolean isOwn;
+        private final boolean isExpired;
 
         private State(boolean isOwn, boolean isExpired) {
             this.isOwn = isOwn;
             this.isExpired = isExpired;
         }
 
-        boolean isExpired() {
+        public boolean isExpired() {
             return isExpired;
         }
 
-        boolean isOwn() {
+        public boolean isOwn() {
             return isOwn;
         }
+
     }
 
     private static final class LockWatcher implements AutoCloseable {
@@ -326,6 +329,31 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         }
     }
 
+    public enum LockNodeState {
+        EXPIRED_LOCK,
+        LIVE_LOCK,
+        NODE_ABSENT,
+        NOT_A_LOCK
+    }
+
+    public static LockNodeState readLockNodeState(CuratorFramework curator, String path) {
+        try {
+            byte[] rawData = curator.getData().forPath(path);
+            LockData lockData = Marshaller.unmarshall(new String(rawData, StandardCharsets.UTF_8), LockData.class);
+            return lockData.isExpired() ? LockNodeState.EXPIRED_LOCK: LockNodeState.LIVE_LOCK;
+        } catch (KeeperException.NoNodeException noNodeException) {
+            logger.debug("No lock by path={}", path, noNodeException);
+            return LockNodeState.NODE_ABSENT;
+        } catch (IOException e) {
+            logger.warn("Found inconsistent data inside lock by path={}", path);
+            return LockNodeState.NOT_A_LOCK;
+        } catch (Exception exception) {
+            String message = "Failed to read data of lock by path=" + path;
+            logger.warn(message, exception);
+            throw new IllegalStateException(message, exception);
+        }
+    }
+
     /**
      * Check if lock is not expired and in acquired state.
      */
@@ -334,9 +362,8 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
-            return new State(
-                    lockData.isOwnedBy(uuid),
-                    lockData.isExpired());
+
+            return new State(lockData.isOwnedBy(uuid), lockData.isExpired());
         } catch (KeeperException.NoNodeException noNodeException) {
             return new State(false, true);
         }

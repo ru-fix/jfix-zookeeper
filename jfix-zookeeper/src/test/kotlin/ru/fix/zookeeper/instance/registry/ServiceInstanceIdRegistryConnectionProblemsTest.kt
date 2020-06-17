@@ -114,13 +114,13 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         /**
          *  Here was errors, because 2 registry manages same instance.
          */
-        Thread.sleep(3000)
+        Thread.sleep(5000)
 
         registry.close()
         /**
          * No error logs, when reconnected registry closed
          */
-        Thread.sleep(3000)
+        Thread.sleep(5000)
         logger.info(zkTree())
         instanceIdState("my-service", "1") shouldBe LIVE_LOCK
     }
@@ -151,7 +151,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         registry2.register("my-service") shouldBe "1"
 
         crusher1.open()
-        Thread.sleep(3000)
+        Thread.sleep(5000)
         /**
          *  Here was errors logged, because 2 registry manages same instance.
          */
@@ -160,7 +160,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         /**
          * No error logs, when reconnected registry closed
          */
-        Thread.sleep(3000)
+        Thread.sleep(5000)
         instanceIdState("my-service", "1") shouldBe LIVE_LOCK
     }
 

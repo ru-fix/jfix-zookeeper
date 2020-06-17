@@ -64,7 +64,7 @@ class ServiceInstanceIdRegistry(
                 )
         ) {
             prolongFailedInstanceIdLocks.forEach { (serviceName, lockIdentity) ->
-                prolongationFallback(lockIdentity, serviceName)
+                reconnectProlongFailedLock(lockIdentity, serviceName)
             }
         }
     }
@@ -82,8 +82,10 @@ class ServiceInstanceIdRegistry(
             val lockIdentity = makeLockIdentity(serviceName, preparedInstanceId)
 
             val result = lockManager.tryAcquire(lockIdentity) {
-                prolongationFallback(it, serviceName)
-                prolongFailedInstanceIdLocks.add(serviceName to lockIdentity)
+                logger.error("Failed to prolong lock=$it after for service=$serviceName. " +
+                        "Current registration node state: " +
+                        ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true))
+                prolongFailedInstanceIdLocks.add(serviceName to it)
             }
             when {
                 result -> {
@@ -133,7 +135,7 @@ class ServiceInstanceIdRegistry(
      * Try to acquire instanceId's lock that failed prolongation.
      * If acquiring failed, then log error.
      */
-    private fun prolongationFallback(lockIdentity: LockIdentity, serviceName: String) {
+    private fun reconnectProlongFailedLock(lockIdentity: LockIdentity, serviceName: String) {
         val instanceId = ZKPaths.getNodeFromPath(lockIdentity.nodePath)
         val acquired = lockManager.tryAcquire(lockIdentity) {
             logger.error("Failed to prolong lock=$it after for service=$serviceName. " +

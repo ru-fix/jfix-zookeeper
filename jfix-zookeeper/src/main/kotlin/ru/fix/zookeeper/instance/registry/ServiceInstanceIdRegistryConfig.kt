@@ -13,5 +13,9 @@ class ServiceInstanceIdRegistryConfig(
                 expirationPeriod = Duration.ofSeconds(30),
                 lockCheckAndProlongInterval =  Duration.ofSeconds(10),
                 acquiringTimeout = Duration.ofSeconds(1)
-        )
+        ),
+        /**
+         * How ofter try to acquire locks of instances, that was lost connection
+         */
+        val retryRestoreInstanceIdInterval: Duration = Duration.ofSeconds(10)
 )

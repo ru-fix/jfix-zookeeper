@@ -6,6 +6,9 @@ import org.apache.zookeeper.KeeperException
 import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.Profiler
 import ru.fix.dynamic.property.api.DynamicProperty
+import ru.fix.stdlib.concurrency.threads.NamedExecutors
+import ru.fix.stdlib.concurrency.threads.ReschedulableScheduler
+import ru.fix.stdlib.concurrency.threads.Schedule
 import ru.fix.zookeeper.lock.LockIdentity
 import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock
 import ru.fix.zookeeper.lock.PersistentExpiringLockManager
@@ -16,9 +19,17 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * This class provides functionality of instance id registration.
+ * When zookeeper client lost connection, instance will get previous instance after reconnection.
  * When this class instantiated, it create service registration path (if not created).
- * When zookeeper client lost connection, instance will get previous instance after reconnection
- * if  disconnect timeout not expired.
+ * When called {@link #register(String)}, registry creates sub-node with serviceName for service instance registration.
+ * It checks which instanceIds already taken and not expired for this service, and based on them generates new instance id.
+ *
+ * When registry had connection problems and because of this there expired lock was appeared,
+ * another registry can acquire lock of instance id, that lock was expired.
+ * Exists case, when first registry reestablished connection, but instance, that have expired lock, already not in self management.
+ * First registry will be log errors until one of registries (first or second) will not be closed and released lock.
+ * Scheduler of first or second registry (which not closed) will reacquire lost instance id's lock and stop logs error.
+ *
  * Service registration guarantees uniqueness of instance id in case of parallel startup on different JVMs.
  */
 class ServiceInstanceIdRegistry(
@@ -34,7 +45,11 @@ class ServiceInstanceIdRegistry(
     }
 
     private val registeredInstanceIdLocks: MutableSet<LockIdentity> = ConcurrentHashMap.newKeySet()
+    private val prolongFailedInstanceIdLocks: MutableSet<Pair<String, LockIdentity>> = ConcurrentHashMap.newKeySet()
 
+    private var disconnectedInstancesRestorer: ReschedulableScheduler = NamedExecutors.newSingleThreadScheduler(
+            "disconnected-instances-restorer", profiler
+    )
     private val lockManager: PersistentExpiringLockManager = PersistentExpiringLockManager(
             curatorFramework,
             config.map { it.persistentExpiringLockManagerConfig },
@@ -43,6 +58,15 @@ class ServiceInstanceIdRegistry(
 
     init {
         initServiceRegistrationPath()
+        disconnectedInstancesRestorer.schedule(
+                Schedule.withDelay(
+                        config.map { it.retryRestoreInstanceIdInterval.toMillis() }
+                )
+        ) {
+            prolongFailedInstanceIdLocks.forEach { (serviceName, lockIdentity) ->
+                prolongationFallback(lockIdentity, serviceName)
+            }
+        }
     }
 
     /**
@@ -57,7 +81,10 @@ class ServiceInstanceIdRegistry(
             val preparedInstanceId = instanceIdGenerator.nextId(alreadyRegisteredInstanceIds)
             val lockIdentity = makeLockIdentity(serviceName, preparedInstanceId)
 
-            val result = lockManager.tryAcquire(lockIdentity) { prolongationFallback(it, serviceName) }
+            val result = lockManager.tryAcquire(lockIdentity) {
+                prolongationFallback(it, serviceName)
+                prolongFailedInstanceIdLocks.add(serviceName to lockIdentity)
+            }
             when {
                 result -> {
                     registeredInstanceIdLocks.add(lockIdentity)
@@ -84,6 +111,12 @@ class ServiceInstanceIdRegistry(
                 ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true))
     }
 
+    /**
+     * Releases lock of instanceId and removed this lock from registry's management
+     * @param serviceName name of service should be unregistered
+     * @param instanceId generated id of service should be unregistered
+     * @throws Exception when failed to release lock of instance id
+     */
     fun unregister(serviceName: String, instanceId: String) {
         try {
             val lockIdentity = makeLockIdentity(serviceName, instanceId)
@@ -96,7 +129,8 @@ class ServiceInstanceIdRegistry(
     }
 
     /**
-     * Try to acquire instanceId's lock that failed prolongation.  If acquiring failed, then log error.
+     * Try to acquire instanceId's lock that failed prolongation.
+     * If acquiring failed, then log error.
      */
     private fun prolongationFallback(lockIdentity: LockIdentity, serviceName: String) {
         val instanceId = ZKPaths.getNodeFromPath(lockIdentity.nodePath)
@@ -112,10 +146,13 @@ class ServiceInstanceIdRegistry(
                     "Lock id: $lockIdentity. Current registration node state: " +
                     ZkTreePrinter(curatorFramework).print(serviceRegistrationPath, true)
             )
+        } else {
+            prolongFailedInstanceIdLocks.remove(serviceName to lockIdentity)
+            logger.info("Connection restored for service=$serviceName with lock=$lockIdentity")
         }
     }
 
-    private fun makeLockIdentity(serviceName: String, instanceId: String) : LockIdentity {
+    private fun makeLockIdentity(serviceName: String, instanceId: String): LockIdentity {
         val instanceIdPath = ZKPaths.makePath(serviceRegistrationPath, serviceName, instanceId)
         val instanceIdData = InstanceIdData(Instant.now())
         return LockIdentity(instanceIdPath, Marshaller.marshall(instanceIdData))
@@ -148,21 +185,25 @@ class ServiceInstanceIdRegistry(
                             curatorFramework, ZKPaths.makePath(serviceRegistrationPath, serviceName, it)
                     )
                 }
-                .filter { it.second == PersistentExpiringDistributedLock.LockNodeState.NOT_EXPIRED_LOCK }
+                .filter { it.second == PersistentExpiringDistributedLock.LockNodeState.LIVE_LOCK }
                 .map { it.first }
                 .toList()
     }
 
     override fun close() {
-        try {
-            registeredInstanceIdLocks.forEach { lockIdentity ->
+        registeredInstanceIdLocks.forEach { lockIdentity ->
+            try {
                 lockManager.release(lockIdentity)
+            } catch (e: Exception) {
+                logger.error("Error during instance id registry close.", e)
             }
-            registeredInstanceIdLocks.clear()
-            lockManager.close()
-            logger.info("Instance id registry with closed successfully.")
-        } catch (e: Exception) {
-            logger.error("Error during instance id registry close.", e)
         }
+        registeredInstanceIdLocks.clear()
+        prolongFailedInstanceIdLocks.clear()
+
+        disconnectedInstancesRestorer.close()
+        lockManager.close()
+
+        logger.info("Instance id registry closed successfully.")
     }
 }

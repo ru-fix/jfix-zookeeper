@@ -18,14 +18,13 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
         val serviceRegistrationPath: String = ZKPaths.makePath(rootPath, "services")
     }
 
-    protected fun isInstanceIdLockExpired(
+    protected fun instanceIdState(
             serviceName: String,
             instanceId: String,
             curator: CuratorFramework = testingServer.client
-    ): Boolean {
+    ): PersistentExpiringDistributedLock.LockNodeState {
         val instancePath = ZKPaths.makePath(serviceRegistrationPath, serviceName, instanceId)
-        return PersistentExpiringDistributedLock.readLockNodeState(curator, instancePath) ==
-                PersistentExpiringDistributedLock.LockNodeState.EXPIRED_LOCK
+        return PersistentExpiringDistributedLock.readLockNodeState(curator, instancePath)
     }
 
     protected fun waitLockNodeState(
@@ -49,7 +48,8 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
             maxInstancesCount: Int = Int.MAX_VALUE,
             lockAcquirePeriod: Duration = Duration.ofSeconds(3),
             expirationPeriod: Duration = Duration.ofSeconds(2),
-            lockCheckAndProlongInterval: Duration = Duration.ofMillis(1000)
+            lockCheckAndProlongInterval: Duration = Duration.ofMillis(1000),
+            retryRestoreInstanceIdInterval: Duration = Duration.ofMillis(1)
     ) = ServiceInstanceIdRegistry(
             curatorFramework = client,
             instanceIdGenerator = MinFreeInstanceIdGenerator(maxInstancesCount),
@@ -62,7 +62,8 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
                                     expirationPeriod = expirationPeriod,
                                     lockCheckAndProlongInterval = lockCheckAndProlongInterval,
                                     acquiringTimeout = Duration.ofSeconds(1)
-                            )
+                            ),
+                            retryRestoreInstanceIdInterval = retryRestoreInstanceIdInterval
                     )),
             profiler = NoopProfiler()
     )

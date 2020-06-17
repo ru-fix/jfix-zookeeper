@@ -5,7 +5,7 @@ import org.apache.curator.utils.ZKPaths
 import org.apache.logging.log4j.kotlin.logger
 import org.junit.jupiter.api.Test
 import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock.LockNodeState.EXPIRED_LOCK
-import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock.LockNodeState.NOT_EXPIRED_LOCK
+import ru.fix.zookeeper.lock.PersistentExpiringDistributedLock.LockNodeState.LIVE_LOCK
 import java.time.Duration
 
 internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractServiceInstanceIdRegistryTest() {
@@ -27,14 +27,14 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
 
         Thread.sleep(lockAcquirePeriod.toMillis() / 2)
         logger.info(zkTree())
-        isInstanceIdLockExpired("a", "1") shouldBe false
+        instanceIdState("a", "1") shouldBe LIVE_LOCK
 
         crusher.open()
         waitReconnectState(zkProxyState)
 
         Thread.sleep(lockAcquirePeriod.toMillis())
         logger.info(zkTree())
-        isInstanceIdLockExpired("a", "1") shouldBe false
+        instanceIdState("a", "1") shouldBe LIVE_LOCK
     }
 
     @Test
@@ -51,7 +51,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         crusher.close()
         waitDisconnectState(zkProxyState)
 
-        isInstanceIdLockExpired("abs-rate", "1") shouldBe false
+        instanceIdState("abs-rate", "1") shouldBe LIVE_LOCK
 
         val registry = createInstanceIdRegistry()
         registry.register("abs-rate") shouldBe "3"
@@ -71,13 +71,13 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         waitDisconnectState(zkProxyState)
 
         waitLockNodeState(EXPIRED_LOCK, ZKPaths.makePath(serviceRegistrationPath, "abs-rate", "1"))
-        isInstanceIdLockExpired("abs-rate", "1") shouldBe true
+        instanceIdState("abs-rate", "1") shouldBe EXPIRED_LOCK
 
         val client = testingServer.createClient()
         createInstanceIdRegistry(client = client, lockAcquirePeriod = lockAcquirePeriod).register("abs-rate") shouldBe "1"
         client.blockUntilConnected()
 
-        isInstanceIdLockExpired("abs-rate", "1") shouldBe false
+        instanceIdState("abs-rate", "1") shouldBe LIVE_LOCK
     }
 
     /**
@@ -104,24 +104,25 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         waitLockNodeState(EXPIRED_LOCK, ZKPaths.makePath(serviceRegistrationPath, "my-service", "1"))
 
         val client = testingServer.createClient()
-        createInstanceIdRegistry(client = client, lockAcquirePeriod = lockAcquirePeriod).register("my-service")
+        createInstanceIdRegistry(client = client, lockAcquirePeriod = lockAcquirePeriod).register("my-service") shouldBe "1"
         client.blockUntilConnected()
 
         logger.info(zkTree())
-        isInstanceIdLockExpired("my-service", "1") shouldBe false
+        instanceIdState("my-service", "1") shouldBe LIVE_LOCK
 
         crusher.open()
         /**
-         *  Here was errors logged with period = lock prolongation interval, because 2 registry manages same instance.
+         *  Here was errors, because 2 registry manages same instance.
          */
-        Thread.sleep(3000)
+        Thread.sleep(5000)
 
         registry.close()
         /**
          * No error logs, when reconnected registry closed
          */
-        Thread.sleep(3000)
-        isInstanceIdLockExpired("my-service", "1") shouldBe false
+        Thread.sleep(13000)
+        logger.info(zkTree())
+        instanceIdState("my-service", "1") shouldBe LIVE_LOCK
     }
 
     /**
@@ -152,7 +153,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         crusher1.open()
         Thread.sleep(3000)
         /**
-         *  Here was errors logged with period = lock prolongation interval, because 2 registry manages same instance.
+         *  Here was errors logged, because 2 registry manages same instance.
          */
 
         registry2.close()
@@ -160,7 +161,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
          * No error logs, when reconnected registry closed
          */
         Thread.sleep(3000)
-        isInstanceIdLockExpired("my-service", "1") shouldBe false
+        instanceIdState("my-service", "1") shouldBe LIVE_LOCK
     }
 
     @Test
@@ -174,7 +175,7 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         crusher.reopen()
 
         waitDisconnectState(zkProxyState)
-        isInstanceIdLockExpired("app", "1") shouldBe false
+        instanceIdState("app", "1") shouldBe LIVE_LOCK
     }
 
     @Test
@@ -194,20 +195,20 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         registry.register("app") shouldBe "2"
         registry.register("app") shouldBe "3"
 
-        isInstanceIdLockExpired("app", "1") shouldBe false
+        instanceIdState("app", "1") shouldBe LIVE_LOCK
 
         crusher.close()
         waitLockNodeState(EXPIRED_LOCK, ZKPaths.makePath(serviceRegistrationPath, "app", "3"))
-        isInstanceIdLockExpired("app", "1") shouldBe true
-        isInstanceIdLockExpired("app", "2") shouldBe true
+        instanceIdState("app", "1") shouldBe EXPIRED_LOCK
+        instanceIdState("app", "2") shouldBe EXPIRED_LOCK
 
         crusher.open()
         waitReconnectState(zkProxyState)
-        waitLockNodeState(NOT_EXPIRED_LOCK, ZKPaths.makePath(serviceRegistrationPath, "app", "3"))
+        waitLockNodeState(LIVE_LOCK, ZKPaths.makePath(serviceRegistrationPath, "app", "3"))
 
-        isInstanceIdLockExpired("app", "1") shouldBe false
-        isInstanceIdLockExpired("app", "2") shouldBe false
-        isInstanceIdLockExpired("app", "3") shouldBe false
+        instanceIdState("app", "1") shouldBe LIVE_LOCK
+        instanceIdState("app", "2") shouldBe LIVE_LOCK
+        instanceIdState("app", "3") shouldBe LIVE_LOCK
     }
 
 }

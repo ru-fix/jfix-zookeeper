@@ -331,7 +331,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
 
     public enum LockNodeState {
         EXPIRED_LOCK,
-        NOT_EXPIRED_LOCK,
+        LIVE_LOCK,
         NODE_ABSENT,
         NOT_A_LOCK
     }
@@ -340,7 +340,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         try {
             byte[] rawData = curator.getData().forPath(path);
             LockData lockData = Marshaller.unmarshall(new String(rawData, StandardCharsets.UTF_8), LockData.class);
-            return lockData.isExpired() ? LockNodeState.EXPIRED_LOCK: LockNodeState.NOT_EXPIRED_LOCK;
+            return lockData.isExpired() ? LockNodeState.EXPIRED_LOCK: LockNodeState.LIVE_LOCK;
         } catch (KeeperException.NoNodeException noNodeException) {
             logger.debug("No lock by path={}", path, noNodeException);
             return LockNodeState.NODE_ABSENT;

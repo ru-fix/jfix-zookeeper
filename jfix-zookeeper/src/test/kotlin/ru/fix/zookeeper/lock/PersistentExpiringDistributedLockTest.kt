@@ -531,7 +531,7 @@ internal class PersistentExpiringDistributedLockTest {
         lock.expirableAcquire(Duration.ofSeconds(10), Duration.ofSeconds(10)).shouldBeTrue()
 
         val nodeState = PersistentExpiringDistributedLock.readLockNodeState(zkServer.client, lockPath)
-        assertEquals(PersistentExpiringDistributedLock.LockNodeState.NOT_EXPIRED_LOCK, nodeState)
+        assertEquals(PersistentExpiringDistributedLock.LockNodeState.LIVE_LOCK, nodeState)
     }
 
     @Test

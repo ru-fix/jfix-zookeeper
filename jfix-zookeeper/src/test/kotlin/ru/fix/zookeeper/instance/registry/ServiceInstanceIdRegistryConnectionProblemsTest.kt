@@ -114,13 +114,13 @@ internal class ServiceInstanceIdRegistryConnectionProblemsTest : AbstractService
         /**
          *  Here was errors, because 2 registry manages same instance.
          */
-        Thread.sleep(5000)
+        Thread.sleep(3000)
 
         registry.close()
         /**
          * No error logs, when reconnected registry closed
          */
-        Thread.sleep(13000)
+        Thread.sleep(3000)
         logger.info(zkTree())
         instanceIdState("my-service", "1") shouldBe LIVE_LOCK
     }

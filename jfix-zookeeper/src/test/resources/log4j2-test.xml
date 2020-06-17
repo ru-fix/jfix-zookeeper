@@ -6,12 +6,11 @@
         </Console>
     </Appenders>
     <Loggers>
-        <!--Uncomment for local testing-->
-        <!--<Logger name="ru.fix" level="DEBUG"/>
+        <Logger name="ru.fix" level="DEBUG"/>
         <Logger name="org.apache.zookeeper" level="WARN"/>
         <Logger name="org.apache.curator" level="WARN"/>
         <Root level="INFO">
             <AppenderRef ref="console"/>
-        </Root>-->
+        </Root>
     </Loggers>
 </Configuration>

@@ -34,16 +34,11 @@ public class ZkTreePrinter {
     }
 
     public String print(String path, boolean includeData) {
-        try {
-            StringBuilder out = new StringBuilder();
-            out.append("\n");
+        StringBuilder out = new StringBuilder();
+        out.append("\n");
 
-            print(path, out, 0, includeData);
-            return out.toString();
-        } catch (Exception e) {
-            log.warn(e.getMessage(), e);
-            return "";
-        }
+        print(path, out, 0, includeData);
+        return out.toString();
     }
 
     private void print(String path, StringBuilder out, int level, boolean includeData) {
@@ -53,7 +48,7 @@ public class ZkTreePrinter {
                 String data = includeData ? " " + new String(client.getData().forPath(ZKPaths.makePath(path, child))) : "";
                 out.append("└ ").append(child).append(data);
             } catch (Exception e) {
-                log.error("Error while trying print znode for path " + path, e);
+                log.debug("Error while trying print znode for path " + path, e);
             }
             out.append("\n");
 

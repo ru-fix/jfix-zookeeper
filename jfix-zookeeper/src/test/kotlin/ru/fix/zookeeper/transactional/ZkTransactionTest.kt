@@ -1,81 +1,85 @@
-package ru.fix.zookeeper.transactional;
+package ru.fix.zookeeper.transactional
 
-import org.apache.curator.framework.CuratorFramework;
-import org.apache.zookeeper.KeeperException;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import ru.fix.zookeeper.testing.ZKTestingServer;
+import org.apache.curator.framework.CuratorFramework
+import org.apache.zookeeper.KeeperException
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import ru.fix.zookeeper.testing.ZKTestingServer
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.*;
+import java.util.ArrayList
+import java.util.HashSet
+import java.util.List
+import java.util.Set
+import java.util.concurrent.*
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.*
 
 
-public class ZkTransactionTest {
+class ZkTransactionTest {
 
-    private ZKTestingServer zkServer;
+    lateinit var zkServer: ZKTestingServer
 
     @BeforeEach
-    public void startZkServer() throws Exception {
+    fun startZkServer(){
         zkServer = new ZKTestingServer()
                 .withCloseOnJvmShutdown();
         zkServer.start();
     }
 
     @AfterEach
-    public void stopZkServer(){
+    fun stopZkServer(){
         zkServer.close();
     }
 
 
     @Test
-    public void testDeletePathWithChildrenIfNeeded() throws Exception {
-        zkServer.getClient().create().creatingParentsIfNeeded().forPath("/1/2/3/4/5/6/7");
+    fun deletePathWithChildrenIfNeeded(){
+        zkServer.client.create().creatingParentsIfNeeded().forPath("/1/2/3/4/5/6/7");
 
-        ZkTransaction.createTransaction(zkServer.getClient())
+        ZkTransaction.createTransaction(zkServer.client)
                 .deletePathWithChildrenIfNeeded("/1/2/3")
                 .deletePathWithChildrenIfNeeded("/1/2")
                 .commit();
 
-        assertNull(zkServer.getClient().checkExists().forPath("/1/2"));
-        assertNotNull(zkServer.getClient().checkExists().forPath("/1"));
+        assertNull(zkServer.client.checkExists().forPath("/1/2"));
+        assertNotNull(zkServer.client.checkExists().forPath("/1"));
     }
 
     @Test
-    public void testCreatePathWithParentsIfNeeded() throws Exception {
-        zkServer.getClient().create().creatingParentsIfNeeded().forPath("/2/03");
+    fun createPathWithParentsIfNeeded() {
+        zkServer.client.create().creatingParentsIfNeeded().forPath("/2/03");
 
-        ZkTransaction.createTransaction(zkServer.getClient())
+        ZkTransaction.createTransaction(zkServer.client)
                 .createPathWithParentsIfNeeded("/1/01/001")
                 .checkPath("/1/01/001")
                 .createPathWithParentsIfNeeded("/1/01/001/0001/00001")
                 .createPathWithParentsIfNeeded("/2/03/003")
                 .commit();
 
-        assertNotNull(zkServer.getClient().checkExists().forPath("/1/01/001"));
-        assertNotNull(zkServer.getClient().checkExists().forPath("/1/01/001/0001/00001"));
-        assertNotNull(zkServer.getClient().checkExists().forPath("/2/03/003"));
+        assertNotNull(zkServer.client.checkExists().forPath("/1/01/001"));
+        assertNotNull(zkServer.client.checkExists().forPath("/1/01/001/0001/00001"));
+        assertNotNull(zkServer.client.checkExists().forPath("/2/03/003"));
     }
 
     @Test
-    public void testCreatePathWithParentsIfNeeded_ForExistingNode() throws Exception {
-        zkServer.getClient().create().creatingParentsIfNeeded().forPath("/2/03");
+    fun `createPathWithParentsIfNeeded throws NodeExistsException if node already exist`() {
+        zkServer.client.create().creatingParentsIfNeeded().forPath("/2/03");
         assertThrows(
                 KeeperException.NodeExistsException.class,
-                () -> ZkTransaction.createTransaction(zkServer.getClient())
-                        .createPathWithParentsIfNeeded("/2/03")
-                        .commit()
+                { ZkTransaction.createTransaction(zkServer.client)
+                    .createPathWithParentsIfNeeded("/2/03")
+                    .commit()
+                }
         );
     }
 
     @Test
     public void testCheckPathWithVersion() throws Exception {
-        ZkTransaction.createTransaction(zkServer.getClient())
+        ZkTransaction.createTransaction(zkServer.client)
                 .createPathWithParentsIfNeeded("/1/01/001")
                 .checkPath("/1/01/001")
                 .checkPathWithVersion("/1/01/001", 0)
@@ -83,15 +87,15 @@ public class ZkTransactionTest {
                 .checkPathWithVersion("/1/01/001", 1)
                 .commit();
 
-        assertNotNull(zkServer.getClient().checkExists().forPath("/1/01/001"));
-        assertArrayEquals(new byte[]{101}, zkServer.getClient().getData().forPath("/1/01/001"));
+        assertNotNull(zkServer.client.checkExists().forPath("/1/01/001"));
+        assertArrayEquals(new byte[]{101}, zkServer.client.getData().forPath("/1/01/001"));
     }
 
     @Test
     public void testCheckPathWithIncorrectVersion() throws Exception {
         assertThrows(
                 KeeperException.BadVersionException.class,
-                () -> ZkTransaction.createTransaction(zkServer.getClient())
+                () -> ZkTransaction.createTransaction(zkServer.client)
                         .createPathWithParentsIfNeeded("/1/01/001")
                         .checkPath("/1/01/001")
                         .checkPathWithVersion("/1/01/001", 0)
@@ -106,13 +110,13 @@ public class ZkTransactionTest {
      */
     @Test
     public void testMixedCreateDelete_Failure() throws Exception {
-        zkServer.getClient().create()
+        zkServer.client.create()
                 .creatingParentsIfNeeded()
                 .forPath("/1/2/3/4/5");
 
         assertThrows(
                 KeeperException.NoNodeException.class,
-                () -> ZkTransaction.createTransaction(zkServer.getClient())
+                () -> ZkTransaction.createTransaction(zkServer.client)
                         .deletePathWithChildrenIfNeeded("/1/2/3")
                         .createPathWithParentsIfNeeded("/1/2/3/4")
                         .commit()
@@ -123,7 +127,7 @@ public class ZkTransactionTest {
     @Test
     public void check_version_WHEN_multiply_updating_THEN_only_one_succeed() throws Exception {
         String lockPath = "/lock";
-        CuratorFramework curator = zkServer.getClient();
+        CuratorFramework curator = zkServer.client;
         curator.create().creatingParentsIfNeeded().forPath(lockPath);
 
         Set<String> expectedNodes = new CopyOnWriteArraySet<>();
@@ -138,7 +142,7 @@ public class ZkTransactionTest {
             final int transactionNumber = i;
             futures.add(CompletableFuture.runAsync(() -> {
                 try {
-                    ZkTransaction.tryCommit(zkServer.getClient(), 1, transaction -> {
+                    ZkTransaction.tryCommit(zkServer.client, 1, transaction -> {
                         transaction.checkAndUpdateVersion(lockPath);
                         transaction.createPath("/" + transactionNumber);
                         countDownLatch.countDown();
@@ -154,6 +158,18 @@ public class ZkTransactionTest {
 
         assertEquals(expectedNodes.size(), 2);
         assertEquals(expectedNodes, new HashSet<>(curator.getChildren().forPath("/")));
+    }
+
+    @Test
+    public void transaction_with_only_changeAndUpdateVersionOnChange_does_nothing(){
+        ZkTransaction.tryCommit(zkServer.client, 1, tx->{
+        })
+    }
+
+    @Test
+    public void transaction_with_creatPath_that_already_created_does_nothing(){
+        ZkTransaction.tryCommit(zkServer.client, 1, tx->{
+        })
     }
 
 }

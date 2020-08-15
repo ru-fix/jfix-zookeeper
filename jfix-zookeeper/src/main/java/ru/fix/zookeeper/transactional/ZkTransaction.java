@@ -8,8 +8,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * Transactional client with createWithParents/deleteWithChildren operations
@@ -37,8 +39,23 @@ public class ZkTransaction {
         void onError(Exception e) throws Exception;
     }
 
+    private class Operation {
+        public final CuratorOp curatorOp;
+        public final boolean executeOnlyIfOtherOperationsInTxMutateZkState;
+
+        public Operation(CuratorOp curatorOp) {
+            this.curatorOp = curatorOp;
+            this.executeOnlyIfOtherOperationsInTxMutateZkState = false;
+        }
+
+        public Operation(CuratorOp curatorOp, boolean executeOnlyIfOtherOperationsInTxMutateZkState) {
+            this.curatorOp = curatorOp;
+            this.executeOnlyIfOtherOperationsInTxMutateZkState = executeOnlyIfOtherOperationsInTxMutateZkState;
+        }
+    }
+
     private final CuratorFramework curatorFramework;
-    private final List<CuratorOp> operations = new ArrayList<>();
+    private final List<Operation> operations = new ArrayList<>();
     private final OperationsContext operationsContext = new OperationsContext();
 
     private ZkTransaction(CuratorFramework curatorFramework) {
@@ -51,12 +68,16 @@ public class ZkTransaction {
     }
 
     public ZkTransaction checkPath(String path) throws Exception {
-        operations.add(curatorFramework.transactionOp().check().forPath(path));
+        operations.add(new Operation(
+                curatorFramework.transactionOp().check().forPath(path),
+                true));
         return this;
     }
 
     public ZkTransaction checkPathWithVersion(String path, Integer version) throws Exception {
-        operations.add(curatorFramework.transactionOp().check().withVersion(version).forPath(path));
+        operations.add(new Operation(
+                curatorFramework.transactionOp().check().withVersion(version).forPath(path),
+                true));
         return this;
     }
 
@@ -64,6 +85,9 @@ public class ZkTransaction {
         operations.addAll(
                 new CreateOperation(curatorFramework, path, CreateMode.PERSISTENT, false)
                         .buildOperations(operationsContext)
+                        .stream()
+                        .map(Operation::new)
+                        .collect(Collectors.toList())
         );
         return this;
     }
@@ -71,33 +95,46 @@ public class ZkTransaction {
     public ZkTransaction createPathWithMode(String path, CreateMode mode) throws Exception {
         operations.addAll(
                 new CreateOperation(curatorFramework, path, mode, false)
-                        .buildOperations(operationsContext));
+                        .buildOperations(operationsContext)
+                        .stream()
+                        .map(Operation::new)
+                        .collect(Collectors.toList())
+        );
         return this;
     }
 
     public ZkTransaction setData(String path, byte[] data) throws Exception {
-        operations.add(curatorFramework.transactionOp().setData().forPath(path, data));
+        operations.add(new Operation(curatorFramework.transactionOp().setData().forPath(path, data)));
         return this;
     }
 
     public ZkTransaction deletePath(String path) throws Exception {
         operations.addAll(
                 new DeleteOperation(curatorFramework, path, false)
-                        .buildOperations(operationsContext));
+                        .buildOperations(operationsContext)
+                        .stream()
+                        .map(Operation::new)
+                        .collect(Collectors.toList()));
         return this;
     }
 
     public ZkTransaction deletePathWithChildrenIfNeeded(String path) throws Exception {
         operations.addAll(
                 new DeleteOperation(curatorFramework, path, true)
-                        .buildOperations(operationsContext));
+                        .buildOperations(operationsContext)
+                        .stream()
+                        .map(Operation::new)
+                        .collect(Collectors.toList()));
         return this;
     }
 
     public ZkTransaction createPathWithParentsIfNeeded(String path) throws Exception {
         operations.addAll(
                 new CreateOperation(curatorFramework, path, CreateMode.PERSISTENT, true)
-                        .buildOperations(operationsContext));
+                        .buildOperations(operationsContext)
+                        .stream()
+                        .map(Operation::new)
+                        .collect(Collectors.toList()));
         return this;
     }
 
@@ -109,7 +146,27 @@ public class ZkTransaction {
      * @param path node, which version should be checked and updated
      * @return previous version of updating node
      */
-    public int checkAndUpdateVersion(String path) throws Exception {
+    public int readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState(String path) throws Exception {
+        int version = curatorFramework.checkExists().forPath(path).getVersion();
+        operations.add(new Operation(
+                curatorFramework
+                        .transactionOp()
+                        .check()
+                        .withVersion(version)
+                        .forPath(path),
+                true));
+        operations.add(
+                new Operation(
+                        curatorFramework
+                                .transactionOp()
+                                .setData()
+                                .forPath(path, new byte[]{}),
+                        true)
+        );
+        return version;
+    }
+
+    public int readVersionThenCheckAndUpdateInTransaction(String path) throws Exception {
         int version = curatorFramework.checkExists().forPath(path).getVersion();
         checkPathWithVersion(path, version);
         setData(path, new byte[]{});
@@ -165,8 +222,13 @@ public class ZkTransaction {
 
     public List<CuratorTransactionResult> commit() throws Exception {
         if (operations.isEmpty()) {
-            throw new IllegalStateException("Transaction is empty");
+            return Collections.emptyList();
         }
-        return curatorFramework.transaction().forOperations(operations);
+        return curatorFramework.transaction()
+                .forOperations(
+                        operations
+                                .stream()
+                                .map(op -> op.curatorOp)
+                                .collect(Collectors.toList()));
     }
 }

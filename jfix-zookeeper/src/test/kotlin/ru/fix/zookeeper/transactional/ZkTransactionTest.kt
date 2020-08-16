@@ -1,43 +1,43 @@
 package ru.fix.zookeeper.transactional
 
-import org.apache.curator.framework.CuratorFramework
+import org.apache.curator.framework.recipes.cache.ChildData
+import org.apache.curator.framework.recipes.cache.CuratorCache
+import org.apache.curator.framework.recipes.cache.CuratorCacheListener
+import org.apache.logging.log4j.kotlin.Logging
 import org.apache.zookeeper.KeeperException
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import ru.fix.zookeeper.testing.ZKTestingServer
 
 import java.util.ArrayList
-import java.util.HashSet
-import java.util.List
-import java.util.Set
 import java.util.concurrent.*
 
-import static org.junit.jupiter.api.Assertions.*
+import java.util.concurrent.atomic.AtomicBoolean
 
 
 class ZkTransactionTest {
+    companion object : Logging
 
     lateinit var zkServer: ZKTestingServer
 
     @BeforeEach
-    fun startZkServer(){
-        zkServer = new ZKTestingServer()
+    fun startZkServer() {
+        zkServer = ZKTestingServer()
                 .withCloseOnJvmShutdown();
         zkServer.start();
     }
 
     @AfterEach
-    fun stopZkServer(){
+    fun stopZkServer() {
         zkServer.close();
     }
 
 
     @Test
-    fun deletePathWithChildrenIfNeeded(){
+    fun deletePathWithChildrenIfNeeded() {
         zkServer.client.create().creatingParentsIfNeeded().forPath("/1/2/3/4/5/6/7");
 
         ZkTransaction.createTransaction(zkServer.client)
@@ -68,108 +68,136 @@ class ZkTransactionTest {
     @Test
     fun `createPathWithParentsIfNeeded throws NodeExistsException if node already exist`() {
         zkServer.client.create().creatingParentsIfNeeded().forPath("/2/03");
-        assertThrows(
-                KeeperException.NodeExistsException.class,
-                { ZkTransaction.createTransaction(zkServer.client)
+        assertThrows<KeeperException.NodeExistsException> {
+            ZkTransaction.createTransaction(zkServer.client)
                     .createPathWithParentsIfNeeded("/2/03")
                     .commit()
-                }
-        );
+        }
     }
 
     @Test
-    public void testCheckPathWithVersion() throws Exception {
+    fun checkPathWithVersion() {
         ZkTransaction.createTransaction(zkServer.client)
                 .createPathWithParentsIfNeeded("/1/01/001")
                 .checkPath("/1/01/001")
                 .checkPathWithVersion("/1/01/001", 0)
-                .setData("/1/01/001", new byte[]{101})
+                .setData("/1/01/001", byteArrayOf(101))
                 .checkPathWithVersion("/1/01/001", 1)
-                .commit();
+                .commit()
 
-        assertNotNull(zkServer.client.checkExists().forPath("/1/01/001"));
-        assertArrayEquals(new byte[]{101}, zkServer.client.getData().forPath("/1/01/001"));
+        assertNotNull(zkServer.client.checkExists().forPath("/1/01/001"))
+        assertArrayEquals(byteArrayOf(101), zkServer.client.getData().forPath("/1/01/001"))
     }
 
     @Test
-    public void testCheckPathWithIncorrectVersion() throws Exception {
-        assertThrows(
-                KeeperException.BadVersionException.class,
-                () -> ZkTransaction.createTransaction(zkServer.client)
-                        .createPathWithParentsIfNeeded("/1/01/001")
-                        .checkPath("/1/01/001")
-                        .checkPathWithVersion("/1/01/001", 0)
-                        .setData("/1/01/001", new byte[]{101})
-                        .checkPathWithVersion("/1/01/001", 2)
-                        .commit()
-        );
+    fun checkPathWithIncorrectVersion() {
+        assertThrows<KeeperException.BadVersionException> {
+            ZkTransaction.createTransaction(zkServer.client)
+                    .createPathWithParentsIfNeeded("/1/01/001")
+                    .checkPath("/1/01/001")
+                    .checkPathWithVersion("/1/01/001", 0)
+                    .setData("/1/01/001", byteArrayOf(101))
+                    .checkPathWithVersion("/1/01/001", 2)
+                    .commit()
+        }
     }
 
     /**
      * Test case for unsupported delete and create operations mix
      */
     @Test
-    public void testMixedCreateDelete_Failure() throws Exception {
+    fun `Mixed create or delete with parents or children fails`() {
         zkServer.client.create()
                 .creatingParentsIfNeeded()
                 .forPath("/1/2/3/4/5");
 
-        assertThrows(
-                KeeperException.NoNodeException.class,
-                () -> ZkTransaction.createTransaction(zkServer.client)
-                        .deletePathWithChildrenIfNeeded("/1/2/3")
-                        .createPathWithParentsIfNeeded("/1/2/3/4")
-                        .commit()
-        );
+        assertThrows<KeeperException.NoNodeException> {
+            ZkTransaction.createTransaction(zkServer.client)
+                    .deletePathWithChildrenIfNeeded("/1/2/3")
+                    .createPathWithParentsIfNeeded("/1/2/3/4")
+                    .commit()
+        }
     }
 
 
     @Test
-    public void check_version_WHEN_multiply_updating_THEN_only_one_succeed() throws Exception {
-        String lockPath = "/lock";
-        CuratorFramework curator = zkServer.client;
+    fun `with checkVersion only one of multiple updating transactions succeed`() {
+        val lockPath = "/lock";
+        val curator = zkServer.client;
         curator.create().creatingParentsIfNeeded().forPath(lockPath);
 
-        Set<String> expectedNodes = new CopyOnWriteArraySet<>();
+        val expectedNodes = CopyOnWriteArraySet<String>();
         expectedNodes.add("lock");
 
-        int quantityOfTransactions = 10;
-        CountDownLatch countDownLatch = new CountDownLatch(quantityOfTransactions);
-        List<CompletableFuture<Void>> futures = new ArrayList<>(quantityOfTransactions);
-        ExecutorService executor = Executors.newFixedThreadPool(quantityOfTransactions);
+        val quantityOfTransactions = 10;
+        val countDownLatch = CountDownLatch(quantityOfTransactions);
+        val futures = ArrayList<CompletableFuture<Void>>(quantityOfTransactions);
+        val executor = Executors.newFixedThreadPool(quantityOfTransactions);
 
-        for (int i = 0; i < quantityOfTransactions; i++) {
-            final int transactionNumber = i;
-            futures.add(CompletableFuture.runAsync(() -> {
+        for (transactionNumber in (0 until quantityOfTransactions)) {
+            futures.add(CompletableFuture.runAsync(Runnable {
                 try {
-                    ZkTransaction.tryCommit(zkServer.client, 1, transaction -> {
-                        transaction.checkAndUpdateVersion(lockPath);
-                        transaction.createPath("/" + transactionNumber);
+                    ZkTransaction.tryCommit(zkServer.client, 1) { transaction ->
+                        transaction.readVersionThenCheckAndUpdateInTransaction(lockPath);
+                        transaction.createPath("/$transactionNumber");
                         countDownLatch.countDown();
                         countDownLatch.await();
-                    });
-                    expectedNodes.add(String.valueOf(transactionNumber));
-                } catch (Exception ignored) {
+                    };
+                    expectedNodes.add(transactionNumber.toString());
+                } catch (ignored: Exception) {
                 }
-            }, executor));
+            }, executor))
         }
-        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+        CompletableFuture.allOf(*futures.toTypedArray()).join();
         executor.shutdown();
 
-        assertEquals(expectedNodes.size(), 2);
-        assertEquals(expectedNodes, new HashSet<>(curator.getChildren().forPath("/")));
+        assertEquals(expectedNodes.size, 2);
+        assertEquals(expectedNodes, curator.children.forPath("/").toHashSet());
     }
 
     @Test
-    public void transaction_with_only_changeAndUpdateVersionOnChange_does_nothing(){
-        ZkTransaction.tryCommit(zkServer.client, 1, tx->{
-        })
-    }
+    fun `transaction with only changeAndUpdateVersionOnChange does nothing`() {
+        val curator = zkServer.client
+        curator.create().creatingParentsIfNeeded().forPath("/version")
 
-    @Test
-    public void transaction_with_creatPath_that_already_created_does_nothing(){
-        ZkTransaction.tryCommit(zkServer.client, 1, tx->{
+        val changeInZkOccurred = AtomicBoolean()
+        val zkListener = CuratorCache.build(curator, "/version").apply { start() }
+        zkListener.listenable().addListener(CuratorCacheListener { type: CuratorCacheListener.Type,
+                                                                   oldData: ChildData?,
+                                                                   newData: ChildData? ->
+            logger.info("Change $type oldData=$oldData newData=$newData")
+            changeInZkOccurred.set(true)
         })
-    }
 
+
+        changeInZkOccurred.set(false)
+        ZkTransaction.tryCommit(curator, 1) { tx ->
+            tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
+        }
+        assertFalse(changeInZkOccurred.get())
+
+
+        changeInZkOccurred.set(false)
+        ZkTransaction.tryCommit(curator, 1){ tx ->
+            tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
+            tx.createPath("/new-path")
+        }
+        assertTrue(changeInZkOccurred.get())
+
+
+        changeInZkOccurred.set(false)
+        ZkTransaction.tryCommit(curator, 1) { tx ->
+            tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
+            tx.setData("/new-path", byteArrayOf(42))
+        }
+        assertTrue(changeInZkOccurred.get())
+
+
+        changeInZkOccurred.set(false)
+        ZkTransaction.tryCommit(curator, 1) { tx ->
+            tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
+            assertNotNull(curator.checkExists().forPath("/new-path"))
+        }
+        assertFalse(changeInZkOccurred.get())
+    }
 }

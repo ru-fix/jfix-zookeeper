@@ -14,17 +14,35 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Transactional client with createWithParents/deleteWithChildren operations
  * <p>
- * !WARN. Functionality of mixing createWithParents/deleteWithChildren limited and won't work in cases like this:
+ * Api for creating transactional-like set of change that atomicaly mutate ZooKeeper state
+ * through ZooKeeper `multi` operation.
  * </p>
- * Current state: 1/2/3
+ * <p>
+ * Be aware, that operations like {@link #createPathWithParentsIfNeeded(String)} works in two steps.
+ * First - they read ZooKeeper state during invocation.
+ * Second - they schedule required action that mutate ZooKeeper state in transaction.
+ * It could happen, that between first and second steps ZooKeeper state changes.
+ * That could lead to unclear behaviour.
+ * To determinate behaviour use {@link #readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState(String)} methods.
+ * </p>
+ * <p>
+ * Functionality of mixing
+ * {@link #createPathWithParentsIfNeeded(String)},
+ * {@link #deletePathWithChildrenIfNeeded(String)},
+ * {@link #createPath(String)},
+ * {@link #deletePath(String)}
+ * is limited and won't work in cases like this:
  * <pre>
+ * Current state:
+ * 1/2/3
+ *
  * Transaction:
  * DELETE 1/2/3
  * DELETE 1/2
  * CREATE WITH PARENTS 1/2/3/4
  * </pre>
+ * </p>
  */
 public class ZkTransaction {
     private final static Logger logger = LoggerFactory.getLogger(ZkTransaction.class);

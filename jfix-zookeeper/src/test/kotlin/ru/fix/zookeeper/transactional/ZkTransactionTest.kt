@@ -171,13 +171,13 @@ class ZkTransactionTest {
             changeInZkOccurred.set(true)
         })
         zkListener.start()
-        sleep(1000)
+        sleep(2000)
 
         changeInZkOccurred.set(false)
         ZkTransaction.tryCommit(curator, 1) { tx ->
             tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
         }
-        sleep(1000)
+        sleep(2000)
         assertFalse(changeInZkOccurred.get())
 
 
@@ -187,6 +187,8 @@ class ZkTransactionTest {
             tx.createPath("/new-path")
         }
         await().until { changeInZkOccurred.get() }
+        sleep(2000)
+
 
         changeInZkOccurred.set(false)
         ZkTransaction.tryCommit(curator, 1) { tx ->
@@ -194,6 +196,7 @@ class ZkTransactionTest {
             tx.setData("/new-path", byteArrayOf(42))
         }
         await().until{ changeInZkOccurred.get() }
+        sleep(2000)
 
 
         changeInZkOccurred.set(false)
@@ -201,7 +204,7 @@ class ZkTransactionTest {
             tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
             assertNotNull(curator.checkExists().forPath("/new-path"))
         }
-        sleep(1000)
+        sleep(2000)
         assertFalse(changeInZkOccurred.get())
 
 

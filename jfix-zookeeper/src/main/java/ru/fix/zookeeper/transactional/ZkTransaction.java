@@ -242,6 +242,10 @@ public class ZkTransaction {
         if (operations.isEmpty()) {
             return Collections.emptyList();
         }
+        if(operations.stream().allMatch(op -> op.executeOnlyIfOtherOperationsInTxMutateZkState)){
+            return Collections.emptyList();
+        }
+
         return curatorFramework.transaction()
                 .forOperations(
                         operations

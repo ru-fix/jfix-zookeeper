@@ -5,12 +5,14 @@ import org.apache.curator.framework.recipes.cache.CuratorCache
 import org.apache.curator.framework.recipes.cache.CuratorCacheListener
 import org.apache.logging.log4j.kotlin.Logging
 import org.apache.zookeeper.KeeperException
+import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import ru.fix.zookeeper.testing.ZKTestingServer
+import java.lang.Thread.sleep
 
 import java.util.ArrayList
 import java.util.concurrent.*
@@ -161,19 +163,21 @@ class ZkTransactionTest {
         curator.create().creatingParentsIfNeeded().forPath("/version")
 
         val changeInZkOccurred = AtomicBoolean()
-        val zkListener = CuratorCache.build(curator, "/version").apply { start() }
+        val zkListener = CuratorCache.build(curator, "/")
         zkListener.listenable().addListener(CuratorCacheListener { type: CuratorCacheListener.Type,
                                                                    oldData: ChildData?,
                                                                    newData: ChildData? ->
-            logger.info("Change $type oldData=$oldData newData=$newData")
+            logger.info("Change $type, ${oldData?.path}, ${newData?.path}")
             changeInZkOccurred.set(true)
         })
-
+        zkListener.start()
+        sleep(1000)
 
         changeInZkOccurred.set(false)
         ZkTransaction.tryCommit(curator, 1) { tx ->
             tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
         }
+        sleep(1000)
         assertFalse(changeInZkOccurred.get())
 
 
@@ -182,15 +186,14 @@ class ZkTransactionTest {
             tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
             tx.createPath("/new-path")
         }
-        assertTrue(changeInZkOccurred.get())
-
+        await().until { changeInZkOccurred.get() }
 
         changeInZkOccurred.set(false)
         ZkTransaction.tryCommit(curator, 1) { tx ->
             tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
             tx.setData("/new-path", byteArrayOf(42))
         }
-        assertTrue(changeInZkOccurred.get())
+        await().until{ changeInZkOccurred.get() }
 
 
         changeInZkOccurred.set(false)
@@ -198,6 +201,15 @@ class ZkTransactionTest {
             tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
             assertNotNull(curator.checkExists().forPath("/new-path"))
         }
+        sleep(1000)
         assertFalse(changeInZkOccurred.get())
+
+
+        changeInZkOccurred.set(false)
+        ZkTransaction.tryCommit(curator, 1){ tx ->
+            tx.readVersionThenCheckAndUpdateInTransactionIfItMutatesZkState("/version")
+            tx.deletePath("/new-path")
+        }
+        await().until { changeInZkOccurred.get() }
     }
 }

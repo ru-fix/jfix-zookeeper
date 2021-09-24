@@ -12,7 +12,6 @@ import ru.fix.stdlib.concurrency.threads.Schedule;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Acquires {@code PersistentExpiringDistributedLock} locks and automatically prolongs them.
@@ -46,23 +45,6 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             lock.close();
         }
     }
-
-
-    private final AtomicBoolean scheduler = new AtomicBoolean(false);
-    private final AtomicBoolean main = new AtomicBoolean(false);
-
-    private void lockAndWait(AtomicBoolean switcher) {
-        switcher.set(true);
-        while (switcher.get()) {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            logger.info("wait til unlock {}", switcher);
-        }
-    }
-
 
     public PersistentExpiringLockManager(
             CuratorFramework curatorFramework,
@@ -139,10 +121,8 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     }
 
     public void release(LockIdentity lockId) {
-        logger.error("Locking release method main thread!!!");
-        lockAndWait(main);
         LockContainer container = locks.remove(lockId);
-        try (container) { // here closing fucking lock!
+        try (container) {
             if (container == null) {
                 logger.error("Illegal state. Persistent lock for lockId={} doesn't exist.", lockId);
                 throw new IllegalStateException("Illegal state. Persistent lock for lockId=" + lockId + " doesn't exist." +
@@ -155,30 +135,6 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             throw exception;
         } catch (Exception exception) {
             logger.error("Failed to release lock: " + lockId, exception);
-        }
-        logger.error("Unlock scheduler thread!!!");
-        scheduler.set(false);
-        try {
-            Thread.sleep(10000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * @param lockId
-     * @param lock
-     * @return false in case of Exception of lock expiration or losing lock ownership
-     */
-    private boolean checkAndProlongLockIfRequired(LockIdentity lockId, PersistentExpiringDistributedLock lock) {
-        try {
-            logger.debug("Check and prolong lockId={}", lockId);
-            return lock.checkAndProlongIfExpiresIn(
-                    config.get().getLockAcquirePeriod(),
-                    config.get().getExpirationPeriod());
-        } catch (Exception e) {
-            logger.error("Failed to checkAndProlongIfExpiresIn persistent locks with lockId {}", lockId, e);
-            return false;
         }
     }
 
@@ -202,10 +158,6 @@ public class PersistentExpiringLockManager implements AutoCloseable {
      * Try to prolong lock or else remove it from {@link #locks}
      */
     private void prolongOrRemoveLock(LockIdentity lockId, LockContainer lockContainer) {
-        logger.error("Unlock main thread!!!!");
-        main.set(false);
-        logger.error("locking scheduler!!!!");
-        lockAndWait(scheduler);
         boolean prolonged = false;
         try {
             logger.debug("Check and prolong lockId={}", lockId);

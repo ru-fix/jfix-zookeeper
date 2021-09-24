@@ -79,21 +79,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         this.lockProlongationScheduler.schedule(
                 Schedule.withDelay(config.map(prop -> prop.getLockCheckAndProlongInterval().toMillis())),
                 0,
-                () -> locks.forEach((lockId, lockContainer) -> {
-                    logger.error("Unlock main thread!!!!");
-                    main.set(false);
-                    logger.error("locking scheduler!!!!");
-                    lockAndWait(scheduler);
-                    if (!checkAndProlongLockIfRequired(lockId, lockContainer.lock)) {
-                        locks.remove(lockId);
-                        logger.error("Failed lock prolongation for lock={}. Lock is removed from manager", lockId);
-                        try {
-                            lockContainer.prolongationFailedListener.onLockProlongationFailedAndRemoved(lockId);
-                        } catch (Exception exc) {
-                            logger.error("Failed to invoke ProlongationFailedListener on lock {}", lockId, exc);
-                        }
-                    }
-                })
+                () -> locks.forEach(this::prolongOrRemoveLock)
         );
     }
 
@@ -210,6 +196,43 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         });
         locks.clear();
         lockProlongationScheduler.close();
+    }
+
+    /**
+     * Try to prolong lock or else remove it from {@link #locks}
+     */
+    private void prolongOrRemoveLock(LockIdentity lockId, LockContainer lockContainer) {
+        logger.error("Unlock main thread!!!!");
+        main.set(false);
+        logger.error("locking scheduler!!!!");
+        lockAndWait(scheduler);
+        boolean prolonged = false;
+        try {
+            logger.debug("Check and prolong lockId={}", lockId);
+            prolonged = lockContainer.lock.checkAndProlongIfExpiresIn(
+                    config.get().getLockAcquirePeriod(),
+                    config.get().getExpirationPeriod()
+            );
+        } catch (Exception e) {
+            // Lock could be already removed and closed with {@link #release(LockIdentity)} in another thread
+            if (!locks.containsKey(lockId)) {
+                logger.info(
+                        "Failed to checkAndProlongIfExpiresIn lockId {} cause it has been deleted already", lockId, e
+                );
+                return;
+            } else {
+                logger.error("Failed to checkAndProlongIfExpiresIn persistent locks with lockId {}", lockId, e);
+            }
+        }
+        if (!prolonged) {
+            locks.remove(lockId);
+            logger.error("Failed lock prolongation for lock={}. Lock is removed from manager", lockId);
+            try {
+                lockContainer.prolongationFailedListener.onLockProlongationFailedAndRemoved(lockId);
+            } catch (Exception exc) {
+                logger.error("Failed to invoke ProlongationFailedListener on lock {}", lockId, exc);
+            }
+        }
     }
 
 }

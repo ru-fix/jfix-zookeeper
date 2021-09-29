@@ -61,7 +61,9 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         this.lockProlongationScheduler.schedule(
                 Schedule.withDelay(config.map(prop -> prop.getLockCheckAndProlongInterval().toMillis())),
                 0,
-                () -> locks.forEach(this::prolongOrRemoveLock)
+                () -> locks.forEach(
+                        (lockId, lockContainer) -> prolongOrRemoveLock(locks, config, lockId, lockContainer)
+                )
         );
     }
 
@@ -157,7 +159,12 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     /**
      * Try to prolong lock or else remove it from {@link #locks}
      */
-    private void prolongOrRemoveLock(LockIdentity lockId, LockContainer lockContainer) {
+    private static void prolongOrRemoveLock(
+            ConcurrentHashMap<LockIdentity, LockContainer> locks,
+            DynamicProperty<PersistentExpiringLockManagerConfig> config,
+            LockIdentity lockId,
+            LockContainer lockContainer
+    ) {
         boolean prolonged = false;
         try {
             logger.debug("Check and prolong lockId={}", lockId);
@@ -166,17 +173,14 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                     config.get().getExpirationPeriod()
             );
         } catch (Exception e) {
-            // Lock could be already removed and closed with {@link #release(LockIdentity)} in another thread
-            if (!locks.containsKey(lockId)) {
-                logger.info(
-                        "Failed to checkAndProlongIfExpiresIn lockId {} cause it has been deleted already", lockId, e
-                );
-                return;
-            } else {
-                logger.error("Failed to checkAndProlongIfExpiresIn persistent locks with lockId {}", lockId, e);
-            }
+            logger.error("Failed to checkAndProlongIfExpiresIn persistent locks with lockId {}", lockId, e);
         }
         if (!prolonged) {
+            if (!locks.containsKey(lockId)) {
+                // Lock could be already removed and closed with {@link #release(LockIdentity)} in another thread
+                // Normal case, do not pollute logs
+                return;
+            }
             locks.remove(lockId);
             logger.error("Failed lock prolongation for lock={}. Lock is removed from manager", lockId);
             try {

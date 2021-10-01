@@ -213,7 +213,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                     } else {
                         processingLockResult = ALREADY_REMOVED;
                     }
-                    applyLockProcessResult(lockId, lockContainer, processingLockResult);
+                    applyProcessingLockResult(lockId, lockContainer, processingLockResult);
                 }
             });
         }
@@ -236,7 +236,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             locks.clear();
         }
 
-        private void applyLockProcessResult(
+        private void applyProcessingLockResult(
                 LockIdentity lockId,
                 LockContainer lockContainer,
                 ProcessingLockResult processingLockResult

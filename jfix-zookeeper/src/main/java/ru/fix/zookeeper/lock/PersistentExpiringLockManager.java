@@ -72,6 +72,15 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                         );
                     }
                     return prolonged ? KEEP_LOCK_IN_CONTAINER : REMOVE_LOCK_FROM_CONTAINER;
+                }, (lockId, listener, processingLockResult) -> {
+                    if (processingLockResult == REMOVE_LOCK_FROM_CONTAINER) {
+                        logger.error("Failed lock prolongation for lock={}. Lock is removed from manager", lockId);
+                        try {
+                            listener.onLockProlongationFailedAndRemoved(lockId);
+                        } catch (Exception exc) {
+                            logger.error("Failed to invoke ProlongationFailedListener on lock {}", lockId, exc);
+                        }
+                    }
                 })
         );
     }
@@ -100,8 +109,16 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 newPersistentLock.close();
                 return false;
             }
-            locksContainer.putLock(lockId, newPersistentLock, listener);
-
+            PersistentExpiringDistributedLock oldLock = locksContainer.putLock(lockId, newPersistentLock, listener);
+            if (oldLock != null) {
+                logger.error(
+                        "Illegal state of locking for lockId={}." +
+                                " Lock already existed inside LockManager but expired. " +
+                                " And was replaced by new lock.",
+                        lockId
+                );
+                oldLock.close();
+            }
             logger.info("Lock with lockId={} successfully acquired", lockId);
             return true;
 
@@ -141,6 +158,17 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     @Override
     public void close() {
+        locksContainer.processAllLocks((lockId, lock) -> {
+            lock.close();
+            try {
+                logger.warn("Active not released lock with lockId={} closed.", lockId);
+            } catch (Exception e) {
+                logger.error("Failed to close lock with lockId={}", lockId, e);
+            }
+            return REMOVE_LOCK_FROM_CONTAINER;
+        }, (lockId, lockListener, processingLockResult) -> {
+            // nothing to do
+        });
         locksContainer.close();
         lockProlongationScheduler.close();
     }
@@ -154,24 +182,28 @@ public class PersistentExpiringLockManager implements AutoCloseable {
          */
         private final ConcurrentMap<LockIdentity, LockContainer> locks = new ConcurrentHashMap<>();
 
+        /**
+         * all operations with accessing to {@link #locks} has been synced with this object
+         * LockContainer is encapsulated inside this class so for performance issue this lock could be
+         * replaced with syncing via LockContainer
+         */
         private final ReentrantLock globalLock = new ReentrantLock(true);
 
-        public void putLock(
+        /**
+         * @return - old value in the map
+         */
+        @Nullable
+        public PersistentExpiringDistributedLock putLock(
                 LockIdentity lockId,
                 PersistentExpiringDistributedLock lock,
                 LockProlongationFailedListener listener
         ) {
             LockContainer newLockContainer = new LockContainer(lock, listener);
             LockContainer oldLockContainer = locks.put(lockId, newLockContainer);
-
             if (oldLockContainer != null) {
-                logger.error(
-                        "Illegal state of locking for lockId={}." +
-                                " Lock already existed inside LockManager but expired. " +
-                                " And was replaced by new lock.",
-                        lockId
-                );
-                oldLockContainer.close();
+                return oldLockContainer.lock;
+            } else {
+                return null;
             }
         }
 
@@ -206,12 +238,12 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         }
 
         /**
-         * for background process of lock prolongation
-         *
-         * @param lockProcessor - processor that return what to do with Lock in collection
+         * @param lockProcessor           - processor that returns what to do with Lock in collection
+         * @param lockResultPostProcessor - processor that does some work after processing and applied action
          */
         public void processAllLocks(
-                BiFunction<LockIdentity, PersistentExpiringDistributedLock, ProcessingLockResult> lockProcessor
+                BiFunction<LockIdentity, PersistentExpiringDistributedLock, ProcessingLockResult> lockProcessor,
+                LockResultPostProcessor lockResultPostProcessor
         ) {
             locks.forEach((lockId, lockContainer) -> {
                 try {
@@ -222,46 +254,31 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                     } else {
                         processingLockResult = ALREADY_REMOVED;
                     }
-                    applyProcessingLockResult(lockId, lockContainer, processingLockResult);
+                    applyProcessingLockResult(lockId, processingLockResult);
+                    lockResultPostProcessor.apply(
+                            lockId, lockContainer.prolongationFailedListener, processingLockResult
+                    );
                 } finally {
                     globalLock.unlock();
                 }
             });
         }
 
+        /**
+         *
+         */
         @Override
         public void close() {
-            locks.forEach((lockId, lockContainer) -> {
-                if (lockId != null && lockContainer != null) {
-                    try {
-                        globalLock.lock();
-                        logger.warn("Active not released lock with lockId={} closed.", lockId);
-                        lockContainer.close();
-                        locks.remove(lockId);
-                    } catch (Exception e) {
-                        logger.error("Failed to close lock with lockId={}", lockId, e);
-                    } finally {
-                        globalLock.unlock();
-                    }
-                }
-            });
             locks.clear();
         }
 
         private void applyProcessingLockResult(
                 LockIdentity lockId,
-                LockContainer lockContainer,
                 ProcessingLockResult processingLockResult
         ) {
             switch (processingLockResult) {
                 case REMOVE_LOCK_FROM_CONTAINER:
                     locks.remove(lockId);
-                    logger.error("Failed lock prolongation for lock={}. Lock is removed from manager", lockId);
-                    try {
-                        lockContainer.prolongationFailedListener.onLockProlongationFailedAndRemoved(lockId);
-                    } catch (Exception exc) {
-                        logger.error("Failed to invoke ProlongationFailedListener on lock {}", lockId, exc);
-                    }
                     break;
                 case KEEP_LOCK_IN_CONTAINER:
                     // do nothing
@@ -276,7 +293,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             }
         }
 
-        private static class LockContainer implements AutoCloseable {
+        private static class LockContainer {
             public final PersistentExpiringDistributedLock lock;
             public final LockProlongationFailedListener prolongationFailedListener;
 
@@ -287,11 +304,15 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 this.lock = lock;
                 this.prolongationFailedListener = prolongationFailedListener;
             }
+        }
 
-            @Override
-            public void close() {
-                lock.close();
-            }
+        @FunctionalInterface
+        public interface LockResultPostProcessor {
+            void apply(
+                    LockIdentity lockId,
+                    LockProlongationFailedListener lockListener,
+                    ProcessingLockResult processingLockResult
+            );
         }
 
         enum ProcessingLockResult {

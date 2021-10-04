@@ -2,6 +2,7 @@ package ru.fix.zookeeper.lock
 
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -83,7 +84,7 @@ internal class PersistentExpiringLockManagerTest {
         )
 
         val containsLockBeforePutting = activeLocksContainer.contains(lockId)
-        activeLocksContainer.putLock(lockId, lock) {}
+        val lockOfEmptyContainer = activeLocksContainer.putLock(lockId, lock) {}
         val containsLockAfterPutting = activeLocksContainer.contains(lockId)
         val gotLockState = activeLocksContainer.getLockState(lockId)
         val removedLock = activeLocksContainer.removeLock(lockId)
@@ -91,13 +92,14 @@ internal class PersistentExpiringLockManagerTest {
         val gotLockStateAfterRemove = activeLocksContainer.getLockState(lockId)
         val removeAfterRemoveLock = activeLocksContainer.removeLock(lockId)
 
-        assertFalse(containsLockBeforePutting)
-        assertTrue(containsLockAfterPutting)
-        assertTrue(gotLockState.isPresent)
-        assertEquals(lock, removedLock)
-        assertFalse(containsLockAfterRemoving)
-        assertTrue(gotLockStateAfterRemove.isEmpty)
-        assertNull(removeAfterRemoveLock)
+        containsLockBeforePutting shouldBe false
+        lockOfEmptyContainer shouldBe null
+        containsLockAfterPutting shouldBe true
+        gotLockState.isPresent shouldBe true
+        lock shouldBe removedLock
+        containsLockAfterRemoving shouldBe false
+        gotLockStateAfterRemove.isEmpty shouldBe true
+        removeAfterRemoveLock shouldBe null
     }
 
     @Test
@@ -119,9 +121,9 @@ internal class PersistentExpiringLockManagerTest {
         manager.release(lockId)
         latchMainThread.await(5, SECONDS) // wait manager's scheduler ending to process
 
-        assertTrue(prolongExceptions.isEmpty())
-        assertTrue(lockProlongStatus.get())
-        assertTrue(manager.getLockState(lockId).isEmpty)
+        prolongExceptions.isEmpty() shouldBe true
+        lockProlongStatus.get() shouldBe true
+        manager.getLockState(lockId).isEmpty shouldBe true
     }
 
     @Test
@@ -398,7 +400,7 @@ internal class PersistentExpiringLockManagerTest {
                 Schedule.withDelay(managerConfig.map { it.lockCheckAndProlongInterval.toMillis() }),
                 0
         ) {
-            locksContainer.processAllLocks { _, lock ->
+            locksContainer.processAllLocks({ _, lock ->
                 var prolonged = false
                 try {
                     latchReleaseOperation.countDown()
@@ -415,6 +417,10 @@ internal class PersistentExpiringLockManagerTest {
                 }
                 if (prolonged) ProcessingLockResult.KEEP_LOCK_IN_CONTAINER
                 else ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER
+            }) { _, _, lockProcessingResult ->
+                if (lockProcessingResult == ProcessingLockResult.ALREADY_REMOVED) {
+                    prolongExceptions.add(IllegalStateException("Impossible state"))
+                }
             }
         }
         return PersistentExpiringLockManager(

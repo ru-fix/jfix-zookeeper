@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
 
 import static ru.fix.zookeeper.lock.PersistentExpiringLockManager.ActiveLocksContainer.ProcessingLockResult.*;
@@ -152,7 +153,8 @@ public class PersistentExpiringLockManager implements AutoCloseable {
          * remove, prolong and getState operations MUST BE synced under {@link #globalLock}
          */
         private final ConcurrentMap<LockIdentity, LockContainer> locks = new ConcurrentHashMap<>();
-        private final Object globalLock = new Object();
+
+        private final ReentrantLock globalLock = new ReentrantLock(true);
 
         public void putLock(
                 LockIdentity lockId,
@@ -175,10 +177,13 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
         @Nullable
         public PersistentExpiringDistributedLock removeLock(LockIdentity lockId) {
-            synchronized (globalLock) {
+            try {
+                globalLock.lock();
                 return Optional.ofNullable(locks.remove(lockId))
                         .map(lockContainer -> lockContainer.lock)
                         .orElse(null);
+            } finally {
+                globalLock.unlock();
             }
         }
 
@@ -187,13 +192,16 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         }
 
         public Optional<PersistentExpiringDistributedLock.State> getLockState(LockIdentity lockId) throws Exception {
-            synchronized (globalLock) {
+            try {
+                globalLock.lock();
                 LockContainer lockContainer = locks.get(lockId);
                 if (lockContainer != null) {
                     return Optional.of(lockContainer.lock.getState());
                 } else {
                     return Optional.empty();
                 }
+            } finally {
+                globalLock.unlock();
             }
         }
 
@@ -206,7 +214,8 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 BiFunction<LockIdentity, PersistentExpiringDistributedLock, ProcessingLockResult> lockProcessor
         ) {
             locks.forEach((lockId, lockContainer) -> {
-                synchronized (globalLock) {
+                try {
+                    globalLock.lock();
                     final ProcessingLockResult processingLockResult;
                     if (locks.containsKey(lockId)) {
                         processingLockResult = lockProcessor.apply(lockId, lockContainer.lock);
@@ -214,6 +223,8 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                         processingLockResult = ALREADY_REMOVED;
                     }
                     applyProcessingLockResult(lockId, lockContainer, processingLockResult);
+                } finally {
+                    globalLock.unlock();
                 }
             });
         }
@@ -223,13 +234,14 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             locks.forEach((lockId, lockContainer) -> {
                 if (lockId != null && lockContainer != null) {
                     try {
+                        globalLock.lock();
                         logger.warn("Active not released lock with lockId={} closed.", lockId);
-                        synchronized (globalLock) {
-                            lockContainer.close();
-                            locks.remove(lockId);
-                        }
+                        lockContainer.close();
+                        locks.remove(lockId);
                     } catch (Exception e) {
                         logger.error("Failed to close lock with lockId={}", lockId, e);
+                    } finally {
+                        globalLock.unlock();
                     }
                 }
             });

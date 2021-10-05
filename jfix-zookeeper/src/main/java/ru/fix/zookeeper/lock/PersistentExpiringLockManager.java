@@ -265,7 +265,8 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         }
 
         /**
-         *
+         * clear container without closing content in {@link #locks}
+         * should be closed on the upper level!
          */
         @Override
         public void close() {

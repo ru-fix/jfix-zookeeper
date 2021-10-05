@@ -19,7 +19,6 @@ import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.stdlib.concurrency.threads.NamedExecutors
 import ru.fix.stdlib.concurrency.threads.Schedule
-import ru.fix.zookeeper.lock.PersistentExpiringLockManager.ActiveLocksContainer.ProcessingLockResult
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.time.Duration
@@ -72,34 +71,6 @@ internal class PersistentExpiringLockManagerTest {
         manager1.release(lockId)
 
         callbackFailed.get().shouldBeFalse()
-    }
-
-    @Test
-    fun `test activeLockContainer put contains get remove operations`() {
-        val activeLocksContainer = PersistentExpiringLockManager.ActiveLocksContainer()
-        val lockId = createLockIdentity()
-        val lock = PersistentExpiringDistributedLock(
-                zkServer.client,
-                lockId
-        )
-
-        val containsLockBeforePutting = activeLocksContainer.contains(lockId)
-        val lockOfEmptyContainer = activeLocksContainer.putLock(lockId, lock) {}
-        val containsLockAfterPutting = activeLocksContainer.contains(lockId)
-        val gotLockState = activeLocksContainer.getLockState(lockId)
-        val removedLock = activeLocksContainer.removeLock(lockId)
-        val containsLockAfterRemoving = activeLocksContainer.contains(lockId)
-        val gotLockStateAfterRemove = activeLocksContainer.getLockState(lockId)
-        val removeAfterRemoveLock = activeLocksContainer.removeLock(lockId)
-
-        containsLockBeforePutting shouldBe false
-        lockOfEmptyContainer shouldBe null
-        containsLockAfterPutting shouldBe true
-        gotLockState.isPresent shouldBe true
-        lock shouldBe removedLock
-        containsLockAfterRemoving shouldBe false
-        gotLockStateAfterRemove.isEmpty shouldBe true
-        removeAfterRemoveLock shouldBe null
     }
 
     @Test
@@ -392,7 +363,7 @@ internal class PersistentExpiringLockManagerTest {
         val managerConfig = DynamicProperty.of(PersistentExpiringLockManagerConfig(
                 lockCheckAndProlongInterval = Duration.ofSeconds(1)
         ))
-        val locksContainer = PersistentExpiringLockManager.ActiveLocksContainer()
+        val locksContainer = ActiveLocksContainer()
         val scheduler = NamedExecutors.newSingleThreadScheduler(
                 "test-PersistentExpiringLockManager", NoopProfiler()
         )

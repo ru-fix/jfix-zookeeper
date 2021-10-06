@@ -1,6 +1,5 @@
 package ru.fix.zookeeper.lock;
 
-import kotlin.Unit;
 import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,7 +51,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         lockProlongationScheduler.schedule(
                 Schedule.withDelay(config.map(prop -> prop.getLockCheckAndProlongInterval().toMillis())),
                 0,
-                () -> locksContainer.processAllLocks((lockId, lock) -> {
+                () -> locksContainer.processAllLocks((lockId, lock, prolongFailedListener) -> {
                     boolean prolonged = false;
                     try {
                         logger.debug("Check and prolong lockId={}", lockId);
@@ -65,21 +64,17 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                                 "Failed to checkAndProlongIfExpiresIn persistent locks with lockId {}", lockId, e
                         );
                     }
-                    return prolonged
-                            ? ProcessingLockResult.KEEP_LOCK_IN_CONTAINER
-                            : ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER;
-                }, (lockId, listener, processingLockResult) -> {
-                    if (processingLockResult == ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER) {
+                    if (!prolonged) {
                         logger.error("Failed lock prolongation for lock={}. Lock is removed from manager", lockId);
                         try {
-                            listener.onLockProlongationFailedAndRemoved(lockId);
+                            prolongFailedListener.onLockProlongationFailedAndRemoved(lockId);
                         } catch (Exception exc) {
                             logger.error("Failed to invoke ProlongationFailedListener on lock {}", lockId, exc);
                         }
-                    } else {
-                        // nothing to do
                     }
-                    return Unit.INSTANCE;
+                    return prolonged
+                            ? ProcessingLockResult.KEEP_LOCK_IN_CONTAINER
+                            : ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER;
                 })
         );
     }
@@ -108,7 +103,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 newPersistentLock.close();
                 return false;
             }
-            PersistentExpiringDistributedLock oldLock = locksContainer.putLock(lockId, newPersistentLock, listener);
+            PersistentExpiringDistributedLock oldLock = locksContainer.put(lockId, newPersistentLock, listener);
             if (oldLock != null) {
                 logger.error(
                         "Illegal state of locking for lockId={}." +
@@ -132,11 +127,16 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     }
 
     public Optional<PersistentExpiringDistributedLock.State> getLockState(LockIdentity lockId) throws Exception {
-        return Optional.ofNullable(locksContainer.getLockState(lockId));
+        PersistentExpiringDistributedLock lock = locksContainer.get(lockId);
+        if (lock != null) {
+            return Optional.of(lock.getState());
+        } else {
+            return Optional.empty();
+        }
     }
 
     public void release(LockIdentity lockId) {
-        PersistentExpiringDistributedLock lock = locksContainer.removeLock(lockId);
+        PersistentExpiringDistributedLock lock = locksContainer.remove(lockId);
         try (lock) {
             if (lock == null) {
                 logger.error("Illegal state. Persistent lock for lockId={} doesn't exist.", lockId);
@@ -157,7 +157,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     @Override
     public void close() {
-        locksContainer.processAllLocks((lockId, lock) -> {
+        locksContainer.processAllLocks((lockId, lock, listener) -> {
             lock.close();
             try {
                 logger.warn("Active not released lock with lockId={} closed.", lockId);
@@ -165,8 +165,7 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 logger.error("Failed to close lock with lockId={}", lockId, e);
             }
             return ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER;
-        }, (lockId, lockListener, processingLockResult) -> Unit.INSTANCE);
-        locksContainer.close();
+        });
         lockProlongationScheduler.close();
     }
 

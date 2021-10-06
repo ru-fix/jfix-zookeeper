@@ -33,14 +33,14 @@ internal class ActiveLocksContainerTest {
                 lockId
         )
 
-        val containsLockBeforePutting = activeLocksContainer.contains(lockId)
-        val lockOfEmptyContainer = activeLocksContainer.putLock(lockId, lock, LockProlongationFailedListener {})
-        val containsLockAfterPutting = activeLocksContainer.contains(lockId)
-        val gotLockState = activeLocksContainer.getLockState(lockId)
-        val removedLock = activeLocksContainer.removeLock(lockId)
-        val containsLockAfterRemoving = activeLocksContainer.contains(lockId)
-        val gotLockStateAfterRemove = activeLocksContainer.getLockState(lockId)
-        val removeAfterRemoveLock = activeLocksContainer.removeLock(lockId)
+        val containsLockBeforePutting = lockId in activeLocksContainer
+        val lockOfEmptyContainer = activeLocksContainer.put(lockId, lock, LockProlongationFailedListener {})
+        val containsLockAfterPutting = lockId in activeLocksContainer
+        val gotLockState = activeLocksContainer.get(lockId)
+        val removedLock = activeLocksContainer.remove(lockId)
+        val containsLockAfterRemoving = lockId in activeLocksContainer
+        val gotLockStateAfterRemove = activeLocksContainer.get(lockId)
+        val removeAfterRemoveLock = activeLocksContainer.remove(lockId)
 
         containsLockBeforePutting shouldBe false
         lockOfEmptyContainer shouldBe null

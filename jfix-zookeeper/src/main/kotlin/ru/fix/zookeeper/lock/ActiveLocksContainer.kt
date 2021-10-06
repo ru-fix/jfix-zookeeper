@@ -5,27 +5,28 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
 import java.util.concurrent.locks.ReentrantLock
 
-class ActiveLocksContainer : AutoCloseable {
+class ActiveLocksContainer {
     companion object {
         private val logger = KotlinLogging.logger { }
     }
 
     /**
-     * remove, prolong and getState operations MUST BE synced under [.globalLock]
+     * remove, iterate operations MUST BE synced under [globalLock]
      */
     private val locks: ConcurrentMap<LockIdentity, LockContainer> = ConcurrentHashMap()
 
     /**
-     * all operations with accessing to [.locks] has been synced with this object
+     * all operations with accessing to [locks] has been synced with this object
      * LockContainer is encapsulated inside this class so for performance issue this lock could be
      * replaced with syncing via LockContainer
      */
     private val globalLock = ReentrantLock(true)
 
     /**
-     * @return - old value in the map
+     * @return - old value in the map that was replaced by [lock]
+     * old value state could be changed in another thread
      */
-    fun putLock(
+    fun put(
             lockId: LockIdentity,
             lock: PersistentExpiringDistributedLock,
             listener: LockProlongationFailedListener
@@ -35,9 +36,9 @@ class ActiveLocksContainer : AutoCloseable {
         return oldLockContainer?.lock
     }
 
-    fun removeLock(lockId: LockIdentity): PersistentExpiringDistributedLock? {
+    fun remove(lockId: LockIdentity): PersistentExpiringDistributedLock? {
+        globalLock.lock()
         return try {
-            globalLock.lock()
             locks.remove(lockId)?.lock
         } finally {
             globalLock.unlock()
@@ -48,29 +49,26 @@ class ActiveLocksContainer : AutoCloseable {
         return locks.containsKey(lockId)
     }
 
-    @Throws(Exception::class)
-    fun getLockState(lockId: LockIdentity): PersistentExpiringDistributedLock.State? {
-        return try {
-            globalLock.lock()
-            locks[lockId]?.lock?.state
-        } finally {
-            globalLock.unlock()
-        }
+    /**
+     * @return - lock state could be changed in another thread
+     */
+    fun get(lockId: LockIdentity): PersistentExpiringDistributedLock? {
+        return locks[lockId]?.lock
     }
 
     /**
-     * @param lockProcessing       - returns what to do with Lock in collection
-     * @param resultPostProcessing - does some work after processing lock and applied action
+     * @param lockProcessing - returns what to do with Lock in collection
      */
     fun processAllLocks(
-            lockProcessing: (LockIdentity, PersistentExpiringDistributedLock) -> ProcessingLockResult,
-            resultPostProcessing: (LockIdentity, LockProlongationFailedListener, ProcessingLockResult) -> Unit
+            lockProcessing: (
+                    LockIdentity, PersistentExpiringDistributedLock, LockProlongationFailedListener
+            ) -> ProcessingLockResult
     ) {
         locks.forEach { (lockId: LockIdentity, lockContainer: LockContainer) ->
+            globalLock.lock()
             try {
-                globalLock.lock()
                 val processingLockResult = if (locks.containsKey(lockId)) {
-                    lockProcessing(lockId, lockContainer.lock)
+                    lockProcessing(lockId, lockContainer.lock, lockContainer.prolongationFailedListener)
                 } else {
                     ProcessingLockResult.ALREADY_REMOVED
                 }
@@ -82,28 +80,10 @@ class ActiveLocksContainer : AutoCloseable {
                     ProcessingLockResult.ALREADY_REMOVED ->
                         logger.trace("Lock with lockId {} already has been removed by other thread", lockId)
                 }
-                resultPostProcessing(lockId, lockContainer.prolongationFailedListener, processingLockResult)
             } finally {
                 globalLock.unlock()
             }
         }
-    }
-
-    override fun close() {
-        processAllLocks(
-                lockProcessing = { lockId, lock ->
-                    try {
-                        lock.close()
-                    } catch (e: Exception) {
-                        logger.error(e) { "can't close lock with lockId = $lockId in ActiveLockContainer" }
-                    }
-                    ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER
-                },
-                resultPostProcessing = { _, _, _ ->
-                    // nothing to do
-                }
-        )
-        locks.clear()
     }
 
     private data class LockContainer(

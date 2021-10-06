@@ -371,7 +371,7 @@ internal class PersistentExpiringLockManagerTest {
                 Schedule.withDelay(managerConfig.map { it.lockCheckAndProlongInterval.toMillis() }),
                 0
         ) {
-            locksContainer.processAllLocks({ _, lock ->
+            locksContainer.processAllLocks { _, lock, _ ->
                 var prolonged = false
                 try {
                     latchReleaseOperation.countDown()
@@ -388,10 +388,6 @@ internal class PersistentExpiringLockManagerTest {
                 }
                 if (prolonged) ProcessingLockResult.KEEP_LOCK_IN_CONTAINER
                 else ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER
-            }) { _, _, lockProcessingResult ->
-                if (lockProcessingResult == ProcessingLockResult.ALREADY_REMOVED) {
-                    prolongExceptions.add(IllegalStateException("Impossible state"))
-                }
             }
         }
         return PersistentExpiringLockManager(

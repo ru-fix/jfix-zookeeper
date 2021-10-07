@@ -24,29 +24,17 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     private final ActiveLocksContainer locksContainer;
     private final ReschedulableScheduler lockProlongationScheduler;
 
-    PersistentExpiringLockManager(
-            CuratorFramework curatorFramework,
-            DynamicProperty<PersistentExpiringLockManagerConfig> config,
-            ActiveLocksContainer activeLocksContainer,
-            ReschedulableScheduler lockProlongationScheduler
-    ) {
-        validateConfig(config.get());
-        this.curatorFramework = curatorFramework;
-        this.config = config;
-        this.locksContainer = activeLocksContainer;
-        this.lockProlongationScheduler = lockProlongationScheduler;
-    }
-
     public PersistentExpiringLockManager(
             CuratorFramework curatorFramework,
             DynamicProperty<PersistentExpiringLockManagerConfig> config,
             Profiler profiler
     ) {
-        this(
-                curatorFramework,
-                config,
-                new ActiveLocksContainer(),
-                NamedExecutors.newSingleThreadScheduler("PersistentExpiringLockManager", profiler)
+        validateConfig(config.get());
+        this.curatorFramework = curatorFramework;
+        this.config = config;
+        this.locksContainer = new ActiveLocksContainer();
+        this.lockProlongationScheduler = NamedExecutors.newSingleThreadScheduler(
+                "PersistentExpiringLockManager", profiler
         );
         lockProlongationScheduler.schedule(
                 Schedule.withDelay(config.map(prop -> prop.getLockCheckAndProlongInterval().toMillis())),

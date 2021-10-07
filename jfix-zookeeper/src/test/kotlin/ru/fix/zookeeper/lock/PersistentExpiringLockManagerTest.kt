@@ -17,17 +17,12 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
-import ru.fix.stdlib.concurrency.threads.NamedExecutors
-import ru.fix.stdlib.concurrency.threads.Schedule
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.time.Duration
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.MINUTES
-import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -75,26 +70,47 @@ internal class PersistentExpiringLockManagerTest {
 
     @Test
     fun `concurrency releasing and scheduled prolonging lock`() {
-        val prolongExceptions = ConcurrentHashMap.newKeySet<Exception>()
-        val lockProlongStatus = AtomicBoolean(false)
-        val latchMainThread = CountDownLatch(1)
-        val latchReleaseOperation = CountDownLatch(1)
-        val manager = createScheduleLatchedManager(
-                latchReleaseOperation = latchReleaseOperation,
-                latchMainThread = latchMainThread,
-                prolongExceptions = prolongExceptions,
-                lockProlongStatus = lockProlongStatus
-        )
+        val manager = createLockManager(PersistentExpiringLockManagerConfig(
+                lockCheckAndProlongInterval = Duration.ofMillis(10)
+        ))
+        val lockIds = mutableListOf<LockIdentity>()
+        for (i in 0 until 100) {
+            val lockId = createLockIdentity()
+            manager.tryAcquire(lockId) { }
+            lockIds.add(lockId)
+        }
 
-        val lockId = createLockIdentity()
-        manager.tryAcquire(lockId) {}
-        latchReleaseOperation.await(5, SECONDS) // wait manager's scheduler starting to process
-        manager.release(lockId)
-        latchMainThread.await(5, SECONDS) // wait manager's scheduler ending to process
+        val doneThreadCounter = AtomicInteger(0)
+        val releaseExceptions = mutableListOf<Exception>()
+        val executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
+        for (i in 0 until 50) {
+            val lockId = lockIds[i]
+            executor.execute {
+                try {
+                    TimeUnit.MILLISECONDS.sleep((10 + i).toLong())
+                    manager.release(lockId)
+                } catch (e: Exception) {
+                    releaseExceptions.add(e)
+                } finally {
+                    doneThreadCounter.incrementAndGet()
+                }
+            }
+        }
+        while (doneThreadCounter.get() != 50) {
+            TimeUnit.MILLISECONDS.sleep(100) // wait for releasing all locks
+        }
+        val releaseLockStates = mutableListOf<PersistentExpiringDistributedLock.State>()
+        for (i in 0 until 50) {
+            val lockId = lockIds[i]
+            val stateOptional = manager.getLockState(lockId)
+            if (stateOptional.isPresent) {
+                logger.error("exist state for release lock $lockId state = ${stateOptional.get()}")
+                releaseLockStates.add(stateOptional.get())
+            }
+        }
 
-        prolongExceptions.isEmpty() shouldBe true
-        lockProlongStatus.get() shouldBe true
-        manager.getLockState(lockId).isEmpty shouldBe true
+        releaseExceptions shouldBe emptyList<Exception>()
+        releaseLockStates shouldBe emptyList<PersistentExpiringDistributedLock.State>()
     }
 
     @Test
@@ -343,59 +359,5 @@ internal class PersistentExpiringLockManagerTest {
     private fun nodeExists(path: String) = zkServer.client.checkExists().forPath(path) != null
 
     private fun zkTree() = ZkTreePrinter(zkServer.client).print("/")
-
-    /**
-     * @param latchReleaseOperation - latch that lock main thread before manager.release operation
-     * @param latchMainThread - latch that lock main thread for waiting scheduler process locks (one lock this case)
-     * @param prolongExceptions - set for adding any exceptions when prolong lock in scheduler
-     * @param lockProlongStatus - result of prolonging lock in schdeduler
-     *
-     * @return manager with scheduler that release latchReleaseOperation latch, wait a little
-     * and release latchMainThread latch. This concurrency sequence work once and for one lock in manager
-     */
-    private fun createScheduleLatchedManager(
-            latchReleaseOperation: CountDownLatch,
-            latchMainThread: CountDownLatch,
-            prolongExceptions: ConcurrentHashMap.KeySetView<Exception, Boolean>,
-            lockProlongStatus: AtomicBoolean
-    ): PersistentExpiringLockManager {
-
-        val managerConfig = DynamicProperty.of(PersistentExpiringLockManagerConfig(
-                lockCheckAndProlongInterval = Duration.ofSeconds(1)
-        ))
-        val locksContainer = ActiveLocksContainer()
-        val scheduler = NamedExecutors.newSingleThreadScheduler(
-                "test-PersistentExpiringLockManager", NoopProfiler()
-        )
-        scheduler.schedule(
-                Schedule.withDelay(managerConfig.map { it.lockCheckAndProlongInterval.toMillis() }),
-                0
-        ) {
-            locksContainer.processAllLocks { _, lock, _ ->
-                var prolonged = false
-                try {
-                    latchReleaseOperation.countDown()
-                    TimeUnit.MILLISECONDS.sleep(50) // wait a little for trying release lock in parallel
-                    prolonged = lock.checkAndProlongIfExpiresIn(
-                            managerConfig.get().lockAcquirePeriod,
-                            managerConfig.get().expirationPeriod
-                    )
-                } catch (e: Exception) {
-                    prolongExceptions.add(e)
-                } finally {
-                    lockProlongStatus.set(prolonged)
-                    latchMainThread.countDown()
-                }
-                if (prolonged) ProcessingLockResult.KEEP_LOCK_IN_CONTAINER
-                else ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER
-            }
-        }
-        return PersistentExpiringLockManager(
-                zkServer.client,
-                managerConfig,
-                locksContainer,
-                scheduler
-        )
-    }
 
 }

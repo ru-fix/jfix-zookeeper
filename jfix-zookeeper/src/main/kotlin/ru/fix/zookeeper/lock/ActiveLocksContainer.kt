@@ -67,18 +67,18 @@ class ActiveLocksContainer {
         locks.forEach { (lockId: LockIdentity, lockContainer: LockContainer) ->
             globalLock.lock()
             try {
-                val processingLockResult = if (locks.containsKey(lockId)) {
-                    lockProcessing(lockId, lockContainer.lock, lockContainer.prolongationFailedListener)
-                } else {
-                    ProcessingLockResult.ALREADY_REMOVED
-                }
-                when (processingLockResult) {
-                    ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER -> locks.remove(lockId)
-                    ProcessingLockResult.KEEP_LOCK_IN_CONTAINER -> {
-                        // nothing to do
+                if (locks.containsKey(lockId)) {
+                    val processingLockResult = lockProcessing(
+                            lockId, lockContainer.lock, lockContainer.prolongationFailedListener
+                    )
+                    when (processingLockResult) {
+                        ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER -> locks.remove(lockId)
+                        ProcessingLockResult.KEEP_LOCK_IN_CONTAINER -> {
+                            // nothing to do
+                        }
                     }
-                    ProcessingLockResult.ALREADY_REMOVED ->
-                        logger.trace("Lock with lockId {} already has been removed by other thread", lockId)
+                } else {
+                    logger.trace("Lock with lockId {} already has been removed by other thread", lockId)
                 }
             } finally {
                 globalLock.unlock()
@@ -93,5 +93,5 @@ class ActiveLocksContainer {
 }
 
 enum class ProcessingLockResult {
-    KEEP_LOCK_IN_CONTAINER, REMOVE_LOCK_FROM_CONTAINER, ALREADY_REMOVED
+    KEEP_LOCK_IN_CONTAINER, REMOVE_LOCK_FROM_CONTAINER
 }

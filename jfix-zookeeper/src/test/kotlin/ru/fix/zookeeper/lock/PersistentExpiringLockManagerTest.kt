@@ -2,6 +2,7 @@ package ru.fix.zookeeper.lock
 
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
@@ -20,6 +21,7 @@ import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.MINUTES
@@ -76,13 +78,13 @@ internal class PersistentExpiringLockManagerTest {
         val lockIds = mutableListOf<LockIdentity>()
         for (i in 0 until 100) {
             val lockId = createLockIdentity()
-            manager.tryAcquire(lockId) { }
+            manager.tryAcquire(lockId) { }.shouldBeTrue()
             lockIds.add(lockId)
         }
 
         val doneThreadCounter = AtomicInteger(0)
-        val releaseExceptions = mutableListOf<Exception>()
-        val executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
+        val releaseExceptions = ConcurrentHashMap.newKeySet<Exception>()
+        val executor = Executors.newFixedThreadPool(8)
         for (i in 0 until 50) {
             val lockId = lockIds[i]
             executor.execute {
@@ -109,8 +111,8 @@ internal class PersistentExpiringLockManagerTest {
             }
         }
 
-        releaseExceptions shouldBe emptyList<Exception>()
-        releaseLockStates shouldBe emptyList<PersistentExpiringDistributedLock.State>()
+        releaseExceptions.shouldBeEmpty()
+        releaseLockStates.shouldBeEmpty()
     }
 
     @Test

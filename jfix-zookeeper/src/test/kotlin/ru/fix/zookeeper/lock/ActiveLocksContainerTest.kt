@@ -1,5 +1,6 @@
 package ru.fix.zookeeper.lock
 
+import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import org.apache.curator.utils.ZKPaths
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import ru.fix.zookeeper.testing.ZKTestingServer
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -55,7 +57,7 @@ internal class ActiveLocksContainerTest {
         val lockId = createLockId()
         val lock = PersistentExpiringDistributedLock(zkServer.client, lockId)
         activeLocksContainer.put(lockId, lock, LockProlongationFailedListener {})
-        val states = mutableListOf<PersistentExpiringDistributedLock.State>()
+        val states = ConcurrentHashMap.newKeySet<PersistentExpiringDistributedLock.State>()
 
         val executor = Executors.newSingleThreadExecutor()
         executor.execute {
@@ -68,7 +70,7 @@ internal class ActiveLocksContainerTest {
         TimeUnit.MILLISECONDS.sleep(20)
         activeLocksContainer.remove(lockId)
 
-        states.isNotEmpty() shouldBe true
+        states.shouldNotBeEmpty()
         states.first() shouldNotBe null
     }
 

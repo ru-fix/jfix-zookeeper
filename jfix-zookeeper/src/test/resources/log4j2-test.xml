@@ -7,7 +7,7 @@
     </Appenders>
     <Loggers>
         <Logger name="ru.fix" level="INFO"/>
-        <Logger name="org.apache.zookeeper" level="WARN"/>
+        <Logger name="org.apache.zookeeper.ClientCnxn" level="ERROR"/>
         <Logger name="org.apache.curator" level="WARN"/>
         <Root level="INFO">
             <AppenderRef ref="console"/>

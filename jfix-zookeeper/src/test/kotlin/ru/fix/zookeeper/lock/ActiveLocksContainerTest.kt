@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import ru.fix.zookeeper.testing.ZKTestingServer
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -59,19 +60,24 @@ internal class ActiveLocksContainerTest {
         activeLocksContainer.put(lockId, lock, LockProlongationFailedListener {})
         val states = ConcurrentHashMap.newKeySet<PersistentExpiringDistributedLock.State>()
 
+        val beforeConcurrencyLatch = CountDownLatch(1)
+        val afterConcurrencyLatch = CountDownLatch(1)
         val executor = Executors.newSingleThreadExecutor()
         executor.execute {
-            activeLocksContainer.processAllLocks { lockIdentity, lock, _ ->
-                TimeUnit.MILLISECONDS.sleep(100)
+            activeLocksContainer.processAllLocks { _, lock, _ ->
+                beforeConcurrencyLatch.countDown()
                 states.add(lock.state)
                 return@processAllLocks ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER
             }
+            afterConcurrencyLatch.countDown()
         }
-        TimeUnit.MILLISECONDS.sleep(20)
-        activeLocksContainer.remove(lockId)
+        beforeConcurrencyLatch.await()
+        val removedDirectly = activeLocksContainer.remove(lockId)
+        afterConcurrencyLatch.await()
 
         states.shouldNotBeEmpty()
         states.first() shouldNotBe null
+        removedDirectly shouldBe null
     }
 
     private fun createLockId() = LockIdentity(ZKPaths.makePath(

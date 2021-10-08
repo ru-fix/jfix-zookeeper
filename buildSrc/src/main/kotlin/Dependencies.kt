@@ -1,15 +1,15 @@
 object Vers {
     //Plugins
-    const val dokkav = "0.10.1"
-    const val gradle_release_plugin = "1.3.17"
+    const val dokkav = "1.4.30"
+    const val gradle_release_plugin = "1.4.3"
     const val asciidoctor = "1.6.0"
     const val asciidoctor_convert = "2.4.0"
     const val nexus_staging_plugin = "0.21.2"
     const val nexus_publish_plugin = "0.4.0"
 
     //Dependencies
-    const val kotlin = "1.3.72"
-    const val kotlin_gradle = "1.3.72"
+    const val kotlin = "1.5.31"
+    const val kotlin_gradle = "1.5.21"
     const val kotlin_coroutines = "1.3.5"
     const val jackson = "2.10.3"
     const val apache_curator = "5.0.0"
@@ -55,6 +55,6 @@ object Libs {
     const val junit_jupiter_params = "org.junit.jupiter:junit-jupiter-params:${Vers.junit_jupiter}"
     const val awaitility = "org.awaitility:awaitility:${Vers.awaitility}"
     const val netcrusher = "com.github.netcrusherorg:netcrusher-core:${Vers.netcrusher}"
-    const val kotest_assertions = "io.kotest:kotest-assertions-core-jvm:4.0.5"
-    const val kotest_runner = "io.kotest:kotest-runner-junit5-jvm:4.0.5"
+    const val kotest_assertions = "io.kotest:kotest-assertions-core-jvm:4.6.3"
+    const val kotest_runner = "io.kotest:kotest-runner-junit5-jvm:4.6.3"
 }

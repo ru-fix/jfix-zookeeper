@@ -70,13 +70,13 @@ abstract class AbstractServiceInstanceIdRegistryTest : AbstractZookeeperTest() {
 
     protected fun waitDisconnectState(zkState: AtomicReference<ConnectionState>) {
         Awaitility.await()
-                .timeout(Duration.ofSeconds(2))
+                .timeout(Duration.ofSeconds(10))
                 .until { zkState.get() == ConnectionState.SUSPENDED || zkState.get() == ConnectionState.LOST }
     }
 
     protected fun waitReconnectState(zkState: AtomicReference<ConnectionState>) {
         Awaitility.await()
-                .timeout(Duration.ofSeconds(2))
+                .timeout(Duration.ofSeconds(10))
                 .until { zkState.get() == ConnectionState.RECONNECTED }
     }
 }

@@ -2,6 +2,8 @@ package ru.fix.zookeeper.lock
 
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -19,7 +21,9 @@ import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.zookeeper.testing.ZKTestingServer
 import ru.fix.zookeeper.utils.ZkTreePrinter
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.MINUTES
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -64,6 +68,51 @@ internal class PersistentExpiringLockManagerTest {
         manager1.release(lockId)
 
         callbackFailed.get().shouldBeFalse()
+    }
+
+    @Test
+    fun `concurrency releasing and scheduled prolonging lock`() {
+        val manager = createLockManager(PersistentExpiringLockManagerConfig(
+                lockCheckAndProlongInterval = Duration.ofMillis(10)
+        ))
+        val lockIds = mutableListOf<LockIdentity>()
+        for (i in 0 until 100) {
+            val lockId = createLockIdentity()
+            manager.tryAcquire(lockId) { }.shouldBeTrue()
+            lockIds.add(lockId)
+        }
+
+        val doneThreadCounter = AtomicInteger(0)
+        val releaseExceptions = ConcurrentHashMap.newKeySet<Exception>()
+        val executor = Executors.newFixedThreadPool(8)
+        for (i in 0 until 50) {
+            val lockId = lockIds[i]
+            executor.execute {
+                try {
+                    TimeUnit.MILLISECONDS.sleep((10 + i).toLong())
+                    manager.release(lockId)
+                } catch (e: Exception) {
+                    releaseExceptions.add(e)
+                } finally {
+                    doneThreadCounter.incrementAndGet()
+                }
+            }
+        }
+        while (doneThreadCounter.get() != 50) {
+            TimeUnit.MILLISECONDS.sleep(100) // wait for releasing all locks
+        }
+        val releaseLockStates = mutableListOf<PersistentExpiringDistributedLock.State>()
+        for (i in 0 until 50) {
+            val lockId = lockIds[i]
+            val stateOptional = manager.getLockState(lockId)
+            if (stateOptional.isPresent) {
+                logger.error("exist state for release lock $lockId state = ${stateOptional.get()}")
+                releaseLockStates.add(stateOptional.get())
+            }
+        }
+
+        releaseExceptions.shouldBeEmpty()
+        releaseLockStates.shouldBeEmpty()
     }
 
     @Test
@@ -301,7 +350,8 @@ internal class PersistentExpiringLockManagerTest {
 
     private fun createLockManager(
             config: PersistentExpiringLockManagerConfig = PersistentExpiringLockManagerConfig(),
-            client: CuratorFramework = zkServer.client) =
+            client: CuratorFramework = zkServer.client
+    ) =
             PersistentExpiringLockManager(
                     client,
                     DynamicProperty.of(config),
@@ -311,4 +361,5 @@ internal class PersistentExpiringLockManagerTest {
     private fun nodeExists(path: String) = zkServer.client.checkExists().forPath(path) != null
 
     private fun zkTree() = ZkTreePrinter(zkServer.client).print("/")
+
 }

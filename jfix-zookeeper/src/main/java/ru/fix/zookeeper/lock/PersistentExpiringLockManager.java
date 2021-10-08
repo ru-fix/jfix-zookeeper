@@ -11,7 +11,6 @@ import ru.fix.stdlib.concurrency.threads.Schedule;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Acquires {@code PersistentExpiringDistributedLock} locks and automatically prolongs them.
@@ -22,29 +21,8 @@ public class PersistentExpiringLockManager implements AutoCloseable {
 
     private final CuratorFramework curatorFramework;
     private final DynamicProperty<PersistentExpiringLockManagerConfig> config;
-    private final ConcurrentHashMap<LockIdentity, LockContainer> locks = new ConcurrentHashMap<>();
+    private final ActiveLocksContainer locksContainer;
     private final ReschedulableScheduler lockProlongationScheduler;
-
-    private static class LockContainer implements AutoCloseable {
-        public final PersistentExpiringDistributedLock lock;
-        public final LockProlongationFailedListener prolongationFailedListener;
-
-        public LockContainer(
-                PersistentExpiringDistributedLock lock,
-                LockProlongationFailedListener prolongationFailedListener
-        ) {
-            this.lock = lock;
-            this.prolongationFailedListener = prolongationFailedListener;
-        }
-
-        public boolean release() throws Exception {
-            return lock.release();
-        }
-
-        public void close() {
-            lock.close();
-        }
-    }
 
     public PersistentExpiringLockManager(
             CuratorFramework curatorFramework,
@@ -52,31 +30,45 @@ public class PersistentExpiringLockManager implements AutoCloseable {
             Profiler profiler
     ) {
         validateConfig(config.get());
-
         this.curatorFramework = curatorFramework;
         this.config = config;
+        this.locksContainer = new ActiveLocksContainer();
         this.lockProlongationScheduler = NamedExecutors.newSingleThreadScheduler(
                 "PersistentExpiringLockManager", profiler
         );
-        this.lockProlongationScheduler.schedule(
+        lockProlongationScheduler.schedule(
                 Schedule.withDelay(config.map(prop -> prop.getLockCheckAndProlongInterval().toMillis())),
                 0,
-                () -> locks.forEach((lockId, lockContainer) -> {
-                    if (!checkAndProlongLockIfRequired(lockId, lockContainer.lock)) {
-                        locks.remove(lockId);
+                () -> locksContainer.processAllLocks((lockId, lock, prolongFailedListener) -> {
+                    boolean prolonged = false;
+                    try {
+                        logger.debug("Check and prolong lockId={}", lockId);
+                        prolonged = lock.checkAndProlongIfExpiresIn(
+                                config.get().getLockAcquirePeriod(),
+                                config.get().getExpirationPeriod()
+                        );
+                    } catch (Exception e) {
+                        logger.error(
+                                "Failed to checkAndProlongIfExpiresIn persistent locks with lockId {}", lockId, e
+                        );
+                    }
+                    if (!prolonged) {
                         logger.error("Failed lock prolongation for lock={}. Lock is removed from manager", lockId);
                         try {
-                            lockContainer.prolongationFailedListener.onLockProlongationFailedAndRemoved(lockId);
+                            prolongFailedListener.onLockProlongationFailedAndRemoved(lockId);
                         } catch (Exception exc) {
                             logger.error("Failed to invoke ProlongationFailedListener on lock {}", lockId, exc);
                         }
                     }
+                    return prolonged
+                            ? ProcessingLockResult.KEEP_LOCK_IN_CONTAINER
+                            : ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER;
                 })
         );
     }
 
     private void validateConfig(PersistentExpiringLockManagerConfig config) {
-        if (!(config.getLockAcquirePeriod().compareTo(config.getExpirationPeriod()) >= 0)) {
+        if (config.getLockAcquirePeriod().compareTo(config.getExpirationPeriod()) < 0) {
             throw new IllegalArgumentException("Invalid configuration." +
                     " acquirePeriod should be >= expirationPeriod");
         }
@@ -99,17 +91,16 @@ public class PersistentExpiringLockManager implements AutoCloseable {
                 newPersistentLock.close();
                 return false;
             }
-
-            LockContainer newLockContainer = new LockContainer(newPersistentLock, listener);
-            LockContainer oldLockContainer = locks.put(lockId, newLockContainer);
-
-            if (oldLockContainer != null) {
-                logger.error("Illegal state of locking for lockId={}." +
-                        " Lock already existed inside LockManager but expired. " +
-                        " And was replaced by new lock.", lockId);
-                oldLockContainer.close();
+            PersistentExpiringDistributedLock oldLock = locksContainer.put(lockId, newPersistentLock, listener);
+            if (oldLock != null) {
+                logger.error(
+                        "Illegal state of locking for lockId={}." +
+                                " Lock already existed inside LockManager but expired. " +
+                                " And was replaced by new lock.",
+                        lockId
+                );
+                oldLock.close();
             }
-
             logger.info("Lock with lockId={} successfully acquired", lockId);
             return true;
 
@@ -120,25 +111,29 @@ public class PersistentExpiringLockManager implements AutoCloseable {
     }
 
     public boolean isLockManaged(LockIdentity lockId) {
-        return locks.containsKey(lockId);
+        return locksContainer.contains(lockId);
     }
 
     public Optional<PersistentExpiringDistributedLock.State> getLockState(LockIdentity lockId) throws Exception {
-        LockContainer container = locks.get(lockId);
-        if (container == null) return Optional.empty();
-
-        return Optional.of(container.lock.getState());
+        PersistentExpiringDistributedLock lock = locksContainer.get(lockId);
+        if (lock != null) {
+            return Optional.of(lock.getState());
+        } else {
+            return Optional.empty();
+        }
     }
 
     public void release(LockIdentity lockId) {
-        LockContainer container = locks.remove(lockId);
-        try (container) {
-            if (container == null) {
+        PersistentExpiringDistributedLock lock = locksContainer.remove(lockId);
+        try (lock) {
+            if (lock == null) {
                 logger.error("Illegal state. Persistent lock for lockId={} doesn't exist.", lockId);
-                throw new IllegalStateException("Illegal state. Persistent lock for lockId=" + lockId + " doesn't exist." +
-                        "Probably this lock was released when another manager acquired lock by same path.");
+                throw new IllegalStateException(
+                        "Illegal state. Persistent lock for lockId=" + lockId + " doesn't exist." +
+                                "Probably this lock was released when another manager acquired lock by same path."
+                );
             }
-            if (!container.release()) {
+            if (!lock.release()) {
                 logger.warn("Failed to release lock {}", lockId);
             }
         } catch (IllegalStateException exception) {
@@ -148,36 +143,18 @@ public class PersistentExpiringLockManager implements AutoCloseable {
         }
     }
 
-    /**
-     * @param lockId
-     * @param lock
-     * @return false in case of Exception of lock expiration or losing lock ownership
-     */
-    private boolean checkAndProlongLockIfRequired(LockIdentity lockId, PersistentExpiringDistributedLock lock) {
-        try {
-            logger.debug("Check and prolong lockId={}", lockId);
-            return lock.checkAndProlongIfExpiresIn(
-                    config.get().getLockAcquirePeriod(),
-                    config.get().getExpirationPeriod());
-        } catch (Exception e) {
-            logger.error("Failed to checkAndProlongIfExpiresIn persistent locks with lockId {}", lockId, e);
-            return false;
-        }
-    }
-
     @Override
     public void close() {
-        locks.forEach((lockId, lockContainer) -> {
-            if (lockId != null && lockContainer != null) {
-                try {
-                    logger.warn("Active not released lock with lockId={} closed.", lockId);
-                    lockContainer.lock.close();
-                } catch (Exception e) {
-                    logger.error("Failed to close lock with lockId={}", lockId, e);
-                }
+        locksContainer.processAllLocks((lockId, lock, listener) -> {
+            lock.close();
+            try {
+                logger.warn("Active not released lock with lockId={} closed.", lockId);
+            } catch (Exception e) {
+                logger.error("Failed to close lock with lockId={}", lockId, e);
             }
+            return ProcessingLockResult.REMOVE_LOCK_FROM_CONTAINER;
         });
-        locks.clear();
         lockProlongationScheduler.close();
     }
+
 }

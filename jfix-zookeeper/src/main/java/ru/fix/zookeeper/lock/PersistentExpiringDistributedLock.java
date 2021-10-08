@@ -313,6 +313,7 @@ public class PersistentExpiringDistributedLock implements AutoCloseable {
         assertNotClosed();
 
         Stat nodeStat = curatorFramework.checkExists().forPath(lockId.getNodePath());
+        if (nodeStat == null) return false;
         try {
             LockData lockData = decodeLockData(curatorFramework.getData().forPath(lockId.getNodePath()));
             if (!lockData.isOwnedBy(uuid)) {
